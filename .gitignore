@@ -1,0 +1,32 @@
+# MATLAB autosave and backup files
+*.asv
+*.m~
+*~
+*.autosave
+
+# Compiled MEX binaries (platform-specific)
+*.mex*
+*.mexw64
+*.mexw32
+*.mexa64
+*.mexmaci64
+*.mexglx
+
+# Simulink cache and generated code
+slprj/
+sccprj/
+sfprj/
+codegen/
+work/
+*.slxc
+
+# Packaged apps and toolboxes
+*.mlappinstall
+*.mltbx
+*.mlpkginstall
+
+# Crash dumps
+matlab_crash_dump.*
+
+# MATLAB preferences (usually user-level, but exclude if present)
+.matlab/
