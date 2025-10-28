@@ -114,9 +114,9 @@ function plot_eig_distribution(target_ax, B)
     
 end
 
-function draw_radius(r, x_center)
+function draw_radius(r, x)
     % y_center is implicitly 0
-    pos = [x_center - r, -r, 2*r, 2*r];
+    pos = [x - r, -r, 2*r, 2*r];
     rectangle('Position', pos, 'Curvature', [1,1], 'EdgeColor', 'k', 'LineWidth', 1);
 end
 
