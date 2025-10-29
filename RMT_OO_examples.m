@@ -209,12 +209,26 @@ end
 set(ax2, 'Visible', 'off');
 
 % Create separate colorbar figure
+% Create modified colormap with thin white line at center for colorbar only
+custom_cmap_white = custom_cmap;
+% Replace center 2-3 pixels with white
+center_idx = round(size(custom_cmap, 1) / 2);
+white_line_width = 2; % number of pixels for white line
+white_indices = center_idx + (-floor(white_line_width/2):floor(white_line_width/2));
+custom_cmap_white(white_indices, :) = repmat([1 1 1], length(white_indices), 1);
+
+show_colorbar_ticks = false; % set to false to hide all ticks
+
 f3 = figure(3);
 set(f3, 'Position', [-794   608   291   213])
 ax3 = axes('Parent', f3);
-colormap(ax3, custom_cmap);
+colormap(ax3, custom_cmap_white);
 cb = colorbar(ax3, 'Location', 'west');
 caxis(ax3, clims);
 set(ax3, 'Visible', 'off');
-set(cb, 'Box', 'off', 'TickLength', 0, 'Ticks', [-1, 0, 1]);
+if show_colorbar_ticks
+    set(cb, 'Box', 'off', 'TickLength', 0, 'Ticks', [-1, 0, 1]);
+else
+    set(cb, 'Box', 'off', 'TickLength', 0, 'Ticks', []);
+end
 ylabel(cb, 'Connection Strength');
