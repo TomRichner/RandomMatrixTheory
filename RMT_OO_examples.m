@@ -277,7 +277,10 @@ for i_g = 1:length(G)
         % Original gray histogram when no E/I structure
         A_vals = A_plot(:);
         A_vals = A_vals(~isnan(A_vals));  % Remove NaNs
-        histogram(A_vals, 50, 'FaceColor', [0.5 0.5 0.5], 'EdgeColor', 'none');
+        hold on
+        histogram(A_vals, 50, 'FaceColor', [0 0 1], 'EdgeColor', 'none', 'FaceAlpha', 0.5); % overlapping identical histograms to match the colors above
+        histogram(A_vals, 50, 'FaceColor', [1 0 0], 'EdgeColor', 'none', 'FaceAlpha', 0.5);
+        hold off
     end
     
     desc = G(i_g).rmt.description;
@@ -291,6 +294,7 @@ linkaxes(ax4, 'xy');
 
 %% Figure 5: Row sums as vertical plots
 f5 = figure(5);
+set(f5, 'Renderer', 'painters');
 set(f5, 'Position', [-1715 -114 640 1060], 'Color', 'white')
 tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
@@ -301,7 +305,21 @@ for i_g = 1:length(G)
     A_curr(~G(i_g).rmt.dense_mask) = NaN;  % Set non-dense elements to NaN
     n_curr = size(A_curr, 1);
     row_sums = sum(A_curr, 2, 'omitnan');  % Sum across columns, ignoring NaNs
-    plot(row_sums, 1:n_curr, 'k');  % 'k' for black color
+    
+    % Plot faint red-grey line at zero
+    if i_g == 6
+        % For ax5(6), plot red line first so row_sum appears on top
+        % plot([0 0], [1 n_curr], 'Color', [1 0 0], 'LineWidth', 3);
+        % hold on
+        plot(row_sums, 1:n_curr, 'Color',[0 0 0]', 'LineWidth', 1.5);  
+        % hold off;
+    else
+        plot(row_sums, 1:n_curr, 'Color',[0 0 0], 'LineWidth', 1.5);
+        hold on
+        plot([0 0], [1 n_curr], 'Color', [1 0 0], 'LineWidth', 3);
+        hold off;
+    end
+    
     xlabel('Row Sum');
     ylabel('Row Index');
     desc = G(i_g).rmt.description;
@@ -315,3 +333,4 @@ end
 linkaxes(ax5, 'xy');
 % Set the xlims of ax5(1) to 3x its current xlim
 xlim(ax5(1), 3*xlim(ax5(1)));
+
