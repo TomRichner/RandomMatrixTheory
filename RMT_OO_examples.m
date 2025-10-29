@@ -3,12 +3,14 @@ clear all
 clc
 
 set(groot, 'DefaultAxesFontSize', 20);
-set(groot, 'DefaultTextFontSize', 18);
+set(groot, 'DefaultTextFontSize', 20);
 set(groot, 'DefaultLineLineWidth', 1.5);
 set(groot, 'DefaultAxesLineWidth', 1.5);
 
 %% default parameters
 n = 500;
+scale_n = 1.5; % scale factor for larger matrices
+assert(mod(scale_n * n, 1) == 0, 'scale_n * n must be an integer');
 b = 1;
 mu = 0;
 f = 0.5;
@@ -25,21 +27,22 @@ G(g).rmt.description = ['n=' num2str(n) ', dense, \mu = ' num2str(mu)];
 
 %% 2 Bigger Ginibre ensemble
 g = g+1;
-G(g).rmt = RMT(2*n, b, mu);
-G(g).rmt.description = ['n=' num2str(2*n) ', dense, \mu = ' num2str(mu)];
+n_large = scale_n * n;
+G(g).rmt = RMT(n_large, b, mu);
+G(g).rmt.description = ['n=' num2str(n_large) ', dense, \mu = ' num2str(mu)];
 
 %% 3 Sparse
 g = g+1;
 G(g).rmt = G(g-1).rmt.copy();
 G(g).rmt.apply_sparsity(mean_indegree);
-G(g).rmt.description = ['n=' num2str(2*n) ', k_{in} = ' num2str(mean_indegree) ', \mu = ' num2str(mu)];
+G(g).rmt.description = ['n=' num2str(n_large) ', k_{in} = ' num2str(mean_indegree) ', \mu = ' num2str(mu)];
 
 %% 4 EI imbalanced
 g = g+1;
 G(g).rmt = G(g-1).rmt.copy();
 mu2 = 0.025;
 G(g).rmt.add_constant(mu2);
-G(g).rmt.description = ['n=' num2str(2*n) ', k_{in} = ' num2str(mean_indegree) ', \mu = ' num2str(mu2)];
+G(g).rmt.description = ['n=' num2str(n_large) ', k_{in} = ' num2str(mean_indegree) ', \mu = ' num2str(mu2)];
 
 %% 5 Rajan
 g = g+1;
@@ -111,8 +114,8 @@ custom_cmap = [blues; reds];
 % Parameters for layout
 n_cols = 2;
 n_rows = ceil(length(G) / n_cols);
-row_spacing = 50;  % NaN pixels between rows
-col_spacing = 50;  % NaN pixels between columns
+row_spacing = 150;  % NaN pixels between rows
+col_spacing = 150;  % NaN pixels between columns
 
 % Find maximum matrix size
 max_size = 0;
@@ -120,8 +123,9 @@ for i_g = 1:length(G)
     max_size = max(max_size, size(G(i_g).rmt.A, 1));
 end
 
-% Create cell array to hold padded matrices
+% Create cell array to hold padded matrices and track padding amounts
 padded_matrices = cell(length(G), 1);
+pad_before_array = zeros(length(G), 1);
 for i_g = 1:length(G)
     A_plot = G(i_g).rmt.A;
     A_plot(~G(i_g).rmt.dense_mask) = NaN;
@@ -131,6 +135,7 @@ for i_g = 1:length(G)
     pad_amount = max_size - current_size;
     pad_before = floor(pad_amount / 2);
     pad_after = pad_amount - pad_before;
+    pad_before_array(i_g) = pad_before;
     
     padded_matrices{i_g} = NaN(max_size, max_size);
     padded_matrices{i_g}(pad_before+1:pad_before+current_size, ...
@@ -178,20 +183,17 @@ caxis(ax2, clims);
 axis(ax2, 'equal', 'tight');
 box off
 
-% Add single colorbar
-cb = colorbar(ax2);
-ylabel(cb, 'Connection Strength');
-
 % Add titles at appropriate positions
-% Calculate center positions for each matrix
-title_offset = max_size * 0.05;  % Position titles above matrices
+% Calculate center positions for each matrix, accounting for padding
+title_offset = 10;  % Position titles this many pixels above the actual matrix
 for i_g = 1:length(G)
     i_row = ceil(i_g / n_cols);
     i_col = mod(i_g - 1, n_cols) + 1;
     
-    % Calculate position
+    % Calculate position accounting for padding
     x_pos = (i_col - 1) * (max_size + col_spacing) + max_size / 2;
-    y_pos = (i_row - 1) * (max_size + row_spacing) - title_offset;
+    % Position title just above the actual matrix (after padding)
+    y_pos = (i_row - 1) * (max_size + row_spacing) + pad_before_array(i_g) - title_offset;
     
     % Add text annotation
     desc = G(i_g).rmt.description;
@@ -201,8 +203,18 @@ for i_g = 1:length(G)
     text(ax2, x_pos, y_pos, desc, ...
         'HorizontalAlignment', 'center', ...
         'VerticalAlignment', 'bottom', ...
-        'FontSize', 14, ...
         'FontWeight', 'normal');
 end
 
 set(ax2, 'Visible', 'off');
+
+% Create separate colorbar figure
+f3 = figure(3);
+set(f3, 'Position', [-794   608   291   213])
+ax3 = axes('Parent', f3);
+colormap(ax3, custom_cmap);
+cb = colorbar(ax3, 'Location', 'west');
+caxis(ax3, clims);
+set(ax3, 'Visible', 'off');
+set(cb, 'Box', 'off', 'TickLength', 0, 'Ticks', [-1, 0, 1]);
+ylabel(cb, 'Connection Strength');
