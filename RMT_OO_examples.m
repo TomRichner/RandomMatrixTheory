@@ -75,7 +75,7 @@ end
 
 %% Make figures of different scenarios
 f1 = figure(1);
-set(f1, 'Position', [-1715 -114 640 1060])
+set(f1, 'Position', [-1715 -114 640 1060], 'Color', 'white')
 tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax = gobjects(length(G), 1);
@@ -171,7 +171,7 @@ end
 
 % Plot the concatenated matrix
 f2 = figure(2);
-set(f2, 'Position', [-1715 -114 900 1060])
+set(f2, 'Position', [-1715 -114 900 1060], 'Color', 'white')
 ax2 = axes('Parent', f2);
 
 h = imagesc(ax2, concat_matrix);
@@ -220,7 +220,7 @@ custom_cmap_white(white_indices, :) = repmat([1 1 1], length(white_indices), 1);
 show_colorbar_ticks = false; % set to false to hide all ticks
 
 f3 = figure(3);
-set(f3, 'Position', [-794   608   291   213])
+set(f3, 'Position', [-794   608   291   213], 'Color', 'white')
 ax3 = axes('Parent', f3);
 colormap(ax3, custom_cmap_white);
 cb = colorbar(ax3, 'Location', 'west');
@@ -232,3 +232,80 @@ else
     set(cb, 'Box', 'off', 'TickLength', 0, 'Ticks', []);
 end
 ylabel(cb, 'Connection Strength');
+
+%% Figure 4: Histograms of A matrices (ignoring NaNs)
+f4 = figure(4);
+set(f4, 'Position', [-1715 -114 640 1060], 'Color', 'white')
+tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax4 = gobjects(length(G), 1);
+for i_g = 1:length(G)
+    ax4(i_g) = nexttile;
+    A_plot = G(i_g).rmt.A;
+    A_plot(~G(i_g).rmt.dense_mask) = NaN;  % Set non-dense elements to NaN
+    
+    % Check if this RMT has E/I structure defined
+    if ~isempty(G(i_g).rmt.E) && ~isempty(G(i_g).rmt.I)
+        % Separate E and I column values
+        A_E_cols = A_plot(:, G(i_g).rmt.E);  % Excitatory columns
+        A_I_cols = A_plot(:, G(i_g).rmt.I);  % Inhibitory columns
+        
+        A_E_vals = A_E_cols(:);
+        A_E_vals = A_E_vals(~isnan(A_E_vals));  % Remove NaNs
+        
+        A_I_vals = A_I_cols(:);
+        A_I_vals = A_I_vals(~isnan(A_I_vals));  % Remove NaNs
+        
+        % Plot overlapping histograms with transparency
+        hold on;
+        histogram(A_E_vals, 50, 'FaceColor', [0 0 1], 'EdgeColor', 'none', 'FaceAlpha', 0.5);  % Blue for E
+        histogram(A_I_vals, 50, 'FaceColor', [1 0 0], 'EdgeColor', 'none', 'FaceAlpha', 0.5);  % Red for I
+        hold off;
+    else
+        % Original gray histogram when no E/I structure
+        A_vals = A_plot(:);
+        A_vals = A_vals(~isnan(A_vals));  % Remove NaNs
+        histogram(A_vals, 50, 'FaceColor', [0.5 0.5 0.5], 'EdgeColor', 'none');
+    end
+    
+    desc = G(i_g).rmt.description;
+    if iscell(desc)
+        desc = strjoin(desc, ', ');
+    end
+    % title(desc);
+    grid off;
+    axis off;
+end
+
+% Link x and y axes across all subplots
+linkaxes(ax4, 'xy');
+
+%% Figure 5: Row sums as vertical plots
+f5 = figure(5);
+set(f5, 'Position', [-1715 -114 640 1060], 'Color', 'white')
+tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax5 = gobjects(length(G), 1);
+for i_g = 1:length(G)
+    ax5(i_g) = nexttile;
+    A_curr = G(i_g).rmt.A;
+    A_curr(~G(i_g).rmt.dense_mask) = NaN;  % Set non-dense elements to NaN
+    n_curr = size(A_curr, 1);
+    row_sums = sum(A_curr, 2, 'omitnan');  % Sum across columns, ignoring NaNs
+    plot(row_sums, 1:n_curr, 'k');  % 'k' for black color
+    xlabel('Row Sum');
+    ylabel('Row Index');
+    desc = G(i_g).rmt.description;
+    if iscell(desc)
+        desc = strjoin(desc, ', ');
+    end
+    % title(desc);
+    grid off;
+    set(gca, 'YDir', 'reverse');  % Make row 1 at top
+    axis off;
+end
+
+% Link x and y axes across all subplots
+linkaxes(ax5, 'xy');
+% Set the xlims of ax5(1) to 3x its current xlim
+xlim(ax5(1), 3*xlim(ax5(1)));
