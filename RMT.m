@@ -81,11 +81,11 @@ classdef RMT < handle
         end
         
         function plot_eigenvalue_distribution(obj, target_ax)
-            scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 18, 'MarkerEdgeColor',[0 0 0]);
+            scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 24, 'MarkerEdgeColor',[0 0 0], 'MarkerFaceColor', 'white');
             axis(target_ax, 'equal');
             xlabel(target_ax, 'Re($\lambda$)', 'Interpreter', 'latex');
             ylabel(target_ax, 'Im($\lambda$)', 'Interpreter', 'latex');
-            title(target_ax, obj.description, 'FontWeight', 'normal');
+            
         end
         
         function max_real = get_max_real_eig(obj)

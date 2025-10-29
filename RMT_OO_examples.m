@@ -40,7 +40,7 @@ G(g).rmt.description = ['n=' num2str(n_large) ', k_{in} = ' num2str(mean_indegre
 %% 4 EI imbalanced
 g = g+1;
 G(g).rmt = G(g-1).rmt.copy();
-mu2 = 0.025;
+mu2 = 0.04;
 G(g).rmt.add_constant(mu2);
 G(g).rmt.description = ['n=' num2str(n_large) ', k_{in} = ' num2str(mean_indegree) ', \mu = ' num2str(mu2)];
 
@@ -87,7 +87,40 @@ for i_g = 1:length(G)
     hold off
 end
 
-linkaxes(ax,'y')
+linkaxes(ax,'xy')
+
+% ensure left and right xlims are the same and +/- max(abs(xlim))
+xl = xlim(ax(1));
+new_lim = max(abs(xl));
+xlim(ax, [-new_lim, new_lim]);
+
+% Customize axes after linking
+for i_g = 1:length(G)
+    axes(ax(i_g));
+    x_lim = xlim;
+    y_lim = ylim;
+    axis off;
+    
+    hold on;
+    h_x = plot(x_lim, [0,0], 'k', 'LineWidth', 1.5);
+    h_y = plot([0,0], y_lim, 'k', 'LineWidth', 1.5);
+    uistack([h_x, h_y], 'bottom');
+
+    text(x_lim(2), 0, ' Re($\lambda$)', 'Interpreter', 'latex', 'VerticalAlignment', 'middle');
+    text(0, y_lim(2), 'Im($\lambda$)', 'Interpreter', 'latex', 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center');
+
+    text(x_lim(1), y_lim(1), G(i_g).rmt.description, ...
+        'HorizontalAlignment', 'left', ...
+        'VerticalAlignment', 'top', ...
+        'FontWeight', 'normal', ...
+        'Rotation', 90);
+
+    xlim(x_lim);
+    ylim(y_lim);
+
+    hold off
+end
+
 
 %% Make figure of A matrices
 % Collect all A matrix values to determine clims
@@ -332,5 +365,5 @@ end
 % Link x and y axes across all subplots
 linkaxes(ax5, 'xy');
 % Set the xlims of ax5(1) to 3x its current xlim
-xlim(ax5(1), 3*xlim(ax5(1)));
+xlim(ax5(1), 5*xlim(ax5(1)));
 
