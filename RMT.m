@@ -15,6 +15,7 @@ classdef RMT < handle
         eigenvalues
         r
         x
+        description
     end
     
     methods
@@ -24,6 +25,8 @@ classdef RMT < handle
             obj.b = b;
             obj.mu = mu;
             obj.A = b*randn(n,n)+mu;
+            obj.density = 1; % default to 1
+            obj.dense_mask = true(n,n);
         end
         
         function apply_sparsity(obj, mean_indegree)
@@ -78,11 +81,11 @@ classdef RMT < handle
         end
         
         function plot_eigenvalue_distribution(obj, target_ax)
-            scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 5, 'MarkerEdgeColor',[0 0 0 ]);
+            scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 18, 'MarkerEdgeColor',[0 0 0]);
             axis(target_ax, 'equal');
             xlabel(target_ax, 'Re($\lambda$)', 'Interpreter', 'latex');
             ylabel(target_ax, 'Im($\lambda$)', 'Interpreter', 'latex');
-            title(target_ax, obj.description);
+            title(target_ax, obj.description, 'FontWeight', 'normal');
         end
         
         function max_real = get_max_real_eig(obj)
@@ -118,7 +121,4 @@ classdef RMT < handle
         end
     end
     
-    properties (Hidden)
-        description
-    end
 end

@@ -30,13 +30,15 @@ A = b*randn(n,n)+mu;
 %% apply sparse mask
 A(not(dense_mask)) = 0; 
 
-%% compute row-zeroing adjustment
-[~, Z_row_adj] = row_sum_to_zero(A, dense_mask);
+
 
 %% Rajan matrix to shift the mean of E and I neurons
 M = zeros(n,n);
 M(:,E) = mu_E;
 M(:,I) = mu_I;
+
+%% compute row-zeroing adjustment
+[~, Z] = row_sum_to_zero(A+M, dense_mask);
 
 %% shift along main diagonal
 W = -b*sqrt(n)*sqrt(density).*eye(n,n);
@@ -60,7 +62,7 @@ r_2_2 = b*sqrt(n)*sqrt(density);
 x_2_2 = -b*sqrt(n)*sqrt(density);
 
 % Rajan with row zero sum
-A_3_1 = A+M+Z_row_adj;
+A_3_1 = A+M+Z;
 r_3_1 = b*sqrt(n)*sqrt(density);
 
 
