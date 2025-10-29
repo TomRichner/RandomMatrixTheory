@@ -48,13 +48,13 @@ G(g).rmt.description = ['n=' num2str(n_large) ', k_{in} = ' num2str(mean_indegre
 g = g+1;
 G(g).rmt = G(1).rmt.copy();
 G(g).rmt.set_rajan_means(f, mu_E);
-G(g).rmt.description = {['n=' num2str(n) ', dense'], ['\mu_E = 1, \mu_I = -1']};
+G(g).rmt.description = {['n=' num2str(n) ', dense'], '\mu_E = 1, \mu_I = -1'};
 
 %% 6 Rajan zero sum
 g = g+1;
 G(g).rmt = G(g-1).rmt.copy();
 G(g).rmt.row_sum_to_zero();
-G(g).rmt.description = {['n=' num2str(n) ', dense'], ['\mu_E = 1, \mu_I = -1, rows zeroed']};
+G(g).rmt.description = {['n=' num2str(n) ', dense'], '\mu_E = 1, \mu_I = -1', 'rows zeroed'};
 
 %% Ginibre with shift to edge
 % g = g+1;
@@ -114,8 +114,8 @@ custom_cmap = [blues; reds];
 % Parameters for layout
 n_cols = 2;
 n_rows = ceil(length(G) / n_cols);
-row_spacing = 150;  % NaN pixels between rows
-col_spacing = 150;  % NaN pixels between columns
+row_spacing = 250;  % NaN pixels between rows
+col_spacing = 250;  % NaN pixels between columns
 
 % Find maximum matrix size
 max_size = 0;
@@ -125,21 +125,33 @@ end
 
 % Create cell array to hold padded matrices and track padding amounts
 padded_matrices = cell(length(G), 1);
-pad_before_array = zeros(length(G), 1);
+pad_before_vert_array = zeros(length(G), 1);
+pad_before_horiz_array = zeros(length(G), 1);
 for i_g = 1:length(G)
     A_plot = G(i_g).rmt.A;
     A_plot(~G(i_g).rmt.dense_mask) = NaN;
     
-    % Pad matrix to max_size, centered
+    % Pad matrix to max_size
+    % Horizontal: centered (left-right)
+    % Vertical: aligned to top (no padding above, all padding below)
     current_size = size(A_plot, 1);
     pad_amount = max_size - current_size;
-    pad_before = floor(pad_amount / 2);
-    pad_after = pad_amount - pad_before;
-    pad_before_array(i_g) = pad_before;
+    
+    % Horizontal padding (centered)
+    pad_before_horiz = floor(pad_amount / 2);
+    pad_after_horiz = pad_amount - pad_before_horiz;
+    
+    % Vertical padding (aligned to top, all padding below)
+    pad_before_vert = 0;
+    pad_after_vert = pad_amount;
+    
+    % Store padding amounts for label positioning
+    pad_before_vert_array(i_g) = pad_before_vert;  % Will be 0 for top alignment
+    pad_before_horiz_array(i_g) = pad_before_horiz;  % Track horizontal padding
     
     padded_matrices{i_g} = NaN(max_size, max_size);
-    padded_matrices{i_g}(pad_before+1:pad_before+current_size, ...
-                         pad_before+1:pad_before+current_size) = A_plot;
+    padded_matrices{i_g}(pad_before_vert+1:pad_before_vert+current_size, ...
+                         pad_before_horiz+1:pad_before_horiz+current_size) = A_plot;
 end
 
 % Build the concatenated matrix row by row
@@ -183,31 +195,31 @@ caxis(ax2, clims);
 axis(ax2, 'equal', 'tight');
 box off
 
-% Add titles at appropriate positions
-% Calculate center positions for each matrix, accounting for padding
-title_offset = 10;  % Position titles this many pixels above the actual matrix
+% Add ylabel-style labels at appropriate positions
+% Calculate positions for each matrix
+ylabel_offset = -15;  % Position labels this many pixels from the left edge of actual data
 for i_g = 1:length(G)
     i_row = ceil(i_g / n_cols);
     i_col = mod(i_g - 1, n_cols) + 1;
     
-    % Calculate position accounting for padding
-    x_pos = (i_col - 1) * (max_size + col_spacing) + max_size / 2;
-    % Position title just above the actual matrix (after padding)
-    y_pos = (i_row - 1) * (max_size + row_spacing) + pad_before_array(i_g) - title_offset;
+    % Calculate position
+    % x position: at the left edge of the non-NaN submatrix
+    x_pos = (i_col - 1) * (max_size + col_spacing) + pad_before_horiz_array(i_g) + ylabel_offset;
+    % y position: at the top of the matrix (no vertical padding above)
+    y_pos = (i_row - 1) * (max_size + row_spacing) + 1;
     
-    % Add text annotation
+    % Add text annotation as ylabel
     desc = G(i_g).rmt.description;
-    if iscell(desc)
-        desc = strjoin(desc, ', ');
-    end
     text(ax2, x_pos, y_pos, desc, ...
-        'HorizontalAlignment', 'center', ...
+        'HorizontalAlignment', 'right', ...
         'VerticalAlignment', 'bottom', ...
-        'FontWeight', 'normal');
+        'FontWeight', 'normal', ...
+        'Rotation', 90);
 end
 
 set(ax2, 'Visible', 'off');
 
+%% Figure 3: colorbar
 % Create separate colorbar figure
 % Create modified colormap with thin white line at center for colorbar only
 custom_cmap_white = custom_cmap;
@@ -269,9 +281,6 @@ for i_g = 1:length(G)
     end
     
     desc = G(i_g).rmt.description;
-    if iscell(desc)
-        desc = strjoin(desc, ', ');
-    end
     % title(desc);
     grid off;
     axis off;
@@ -296,9 +305,6 @@ for i_g = 1:length(G)
     xlabel('Row Sum');
     ylabel('Row Index');
     desc = G(i_g).rmt.description;
-    if iscell(desc)
-        desc = strjoin(desc, ', ');
-    end
     % title(desc);
     grid off;
     set(gca, 'YDir', 'reverse');  % Make row 1 at top
