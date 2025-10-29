@@ -107,33 +107,102 @@ blues = [linspace(0, 0, half)', linspace(0, 0, half)', linspace(1, 0, half)'];
 reds = [linspace(0, 1, half)', linspace(0, 0, half)', linspace(0, 0, half)'];
 custom_cmap = [blues; reds];
 
-f2 = figure(2);
-set(f2, 'Position', [-1715 -114 640 1060])
-tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+%% Create concatenated matrix with constant pixel size
+% Parameters for layout
+n_cols = 2;
+n_rows = ceil(length(G) / n_cols);
+row_spacing = 50;  % NaN pixels between rows
+col_spacing = 50;  % NaN pixels between columns
 
-ax2 = gobjects(length(G), 1);
+% Find maximum matrix size
+max_size = 0;
 for i_g = 1:length(G)
-    ax2(i_g) = nexttile;
-    
-    % Create A matrix with NaN for sparse (zero) elements
+    max_size = max(max_size, size(G(i_g).rmt.A, 1));
+end
+
+% Create cell array to hold padded matrices
+padded_matrices = cell(length(G), 1);
+for i_g = 1:length(G)
     A_plot = G(i_g).rmt.A;
     A_plot(~G(i_g).rmt.dense_mask) = NaN;
     
-    % Plot with transparency for NaN values
-    h = imagesc(ax2(i_g), A_plot);
-    box off
-    set(h, 'AlphaData', ~isnan(A_plot));
+    % Pad matrix to max_size, centered
+    current_size = size(A_plot, 1);
+    pad_amount = max_size - current_size;
+    pad_before = floor(pad_amount / 2);
+    pad_after = pad_amount - pad_before;
     
-    % Set background color to bright green for sparse elements
-    set(ax2(i_g), 'Color', [1 1 1]);
-    
-    colormap(ax2(i_g), custom_cmap);
-    caxis(ax2(i_g), clims);
-    axis(ax2(i_g), 'equal', 'tight');
-    title(ax2(i_g), G(i_g).rmt.description, 'FontWeight', 'normal');
-    colorbar(ax2(i_g));
-    
-    % Hide the axes completely
-    set(ax2(i_g), 'Visible', 'off');
-    
+    padded_matrices{i_g} = NaN(max_size, max_size);
+    padded_matrices{i_g}(pad_before+1:pad_before+current_size, ...
+                         pad_before+1:pad_before+current_size) = A_plot;
 end
+
+% Build the concatenated matrix row by row
+concat_matrix = [];
+for i_row = 1:n_rows
+    row_matrices = [];
+    for i_col = 1:n_cols
+        idx = (i_row - 1) * n_cols + i_col;
+        if idx <= length(G)
+            row_matrices = [row_matrices, padded_matrices{idx}];
+        else
+            % Fill empty space with NaN
+            row_matrices = [row_matrices, NaN(max_size, max_size)];
+        end
+        
+        % Add column spacing (except after last column)
+        if i_col < n_cols
+            row_matrices = [row_matrices, NaN(max_size, col_spacing)];
+        end
+    end
+    
+    concat_matrix = [concat_matrix; row_matrices];
+    
+    % Add row spacing (except after last row)
+    if i_row < n_rows
+        concat_matrix = [concat_matrix; NaN(row_spacing, size(row_matrices, 2))];
+    end
+end
+
+% Plot the concatenated matrix
+f2 = figure(2);
+set(f2, 'Position', [-1715 -114 900 1060])
+ax2 = axes('Parent', f2);
+
+h = imagesc(ax2, concat_matrix);
+set(h, 'AlphaData', ~isnan(concat_matrix));
+set(ax2, 'Color', [1 1 1]);
+
+colormap(ax2, custom_cmap);
+caxis(ax2, clims);
+axis(ax2, 'equal', 'tight');
+box off
+
+% Add single colorbar
+cb = colorbar(ax2);
+ylabel(cb, 'Connection Strength');
+
+% Add titles at appropriate positions
+% Calculate center positions for each matrix
+title_offset = max_size * 0.05;  % Position titles above matrices
+for i_g = 1:length(G)
+    i_row = ceil(i_g / n_cols);
+    i_col = mod(i_g - 1, n_cols) + 1;
+    
+    % Calculate position
+    x_pos = (i_col - 1) * (max_size + col_spacing) + max_size / 2;
+    y_pos = (i_row - 1) * (max_size + row_spacing) - title_offset;
+    
+    % Add text annotation
+    desc = G(i_g).rmt.description;
+    if iscell(desc)
+        desc = strjoin(desc, ', ');
+    end
+    text(ax2, x_pos, y_pos, desc, ...
+        'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'bottom', ...
+        'FontSize', 14, ...
+        'FontWeight', 'normal');
+end
+
+set(ax2, 'Visible', 'off');
