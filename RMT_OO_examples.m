@@ -17,6 +17,7 @@ f = 0.5;
 mu_E = 1; % relative to b
 mean_indegree = n; % desired mean number of connections in and out if sparse
 
+% % % Figures 1-5 examples of changing n, changing density, changing mu, changing mu_E/mu_I and applying row zero
 %% Struct to hold RMT objects
 G = struct();
 
@@ -75,7 +76,7 @@ end
 
 %% Make figures of different scenarios
 f1 = figure(1);
-set(f1, 'Position', [-1715 -114 640 1060], 'Color', 'white')
+set(f1, 'Position', [-1715 -114 710 1060], 'Color', 'white')
 tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax = gobjects(length(G), 1);
@@ -367,3 +368,269 @@ linkaxes(ax5, 'xy');
 % Set the xlims of ax5(1) to 3x its current xlim
 xlim(ax5(1), 5*xlim(ax5(1)));
 
+% % % Figures 11-15 new set of figures, similar to figures 1-5 above in content.  Except this figure will have 1 x 4 subplots.  
+% subplot 1 will be H(2), subplot 2 will be H(3), subplot 3 will be H(4), and subplot 4 will be H(5).  Note that H(1) will NOT be in the figures.
+% first, we need a RMT with mu_E and mu_I similar to G(6) above, call it H(1)
+% In this new set of figure, we want to simulate the sparse activation of a network
+% Lets assume the neurons have an internal bias vector bias_b = randn(n,1) which is due to their own intrinsic excitability and average input from other neurons
+% Neurons can't have negative firing rates, so if the bias is negative, we must zero out the corresponding columns of the A matrix to form H(2)
+% for H(3) we compute the actual spectral radius of H(2) and shift H(3) such that it is on the edge of stability using RMT.shift_diagonal()
+% this is to simulate homeostatic mechanisms which put it on the EOC
+% now we add a random, sparse stimulus u to bias_b, which simulates a change in environmental stimulus. This instantaneously changes the activation of the 
+% neurons.  Copy H(1) to make H(4), then zero out its columns for negative u+bias_b values.  Then shift it the same amount as we shifted H(2) to get H(3)
+% this is because it takes a while for homeostatic mechanisms to change, so the shift can't change in time.
+% due to the imbalance caused by u, we should now have outlier eigenvalues in H(4)
+% for H(5) copy H(4), reduce the magnitude of all non-diagonal elements enough such that the new spectral radius is on the edge of stability.
+% figure 11 are the distribution of eigenvalues
+% figure 12 are the A matrices imagesc plots
+% figure 13 is the colorbar
+% figure 14 are the A matrix histograms
+% figure 15 are the row sums.
+
+%% Struct to hold RMT objects for figures 11-15
+H = struct();
+
+%% H(1) - Base Rajan with row zero sum (similar to G(6))
+h = 1;
+H(h).rmt = G(1).rmt.copy();
+H(h).rmt.set_rajan_means(f, mu_E);
+H(h).rmt.row_sum_to_zero();
+H(h).rmt.description = {['n=' num2str(n) ', dense'], '\mu_E = 1, \mu_I = -1', 'rows zeroed', 'baseline'};
+
+%% Create bias vector
+bias_b = randn(n, 1);
+
+%% H(2) - Zero columns where bias is negative
+h = h+1;
+H(h).rmt = H(1).rmt.copy();
+negative_bias = bias_b < 0;
+H(h).rmt.zero_columns(negative_bias);
+H(h).rmt.description = {['n=' num2str(n) ', dense'], '\mu_E = 1, \mu_I = -1', 'rows zeroed', 'cols zeroed (neg bias)'};
+% Get actual spectral radius of H(2) to use for all circles
+H(2).rmt.compute_eigenvalues();
+r_H2 = max(real(H(2).rmt.eigenvalues));
+H(h).rmt.set_plot_circle(r_H2, 0);
+
+%% H(3) - zero rows and Shift H(2) to edge of stability
+h = h+1;
+H(h).rmt = H(2).rmt.copy();
+H(h).rmt.row_sum_to_zero();
+H(h).rmt.compute_eigenvalues();
+r_H3 = max(real(H(3).rmt.eigenvalues));
+H(h).rmt.shift_diagonal(-r_H3);
+H(h).rmt.description = {['n=' num2str(n) ', dense'], '\mu_E = 1, \mu_I = -1', 'rows zeroed', 'cols zeroed, shifted to EOC'};
+H(h).rmt.set_plot_circle(r_H3, -r_H3);
+
+%% Create sparse stimulus u
+u_density = 0.2;  % 10% of neurons receive stimulus
+u = zeros(n, 1);
+stimulated_neurons = rand(n, 1) < u_density;
+u(stimulated_neurons) = randn(sum(stimulated_neurons), 1);
+
+%% H(4) - Copy H(1), zero columns based on u+bias_b, apply same shift
+h = h+1;
+H(h).rmt = H(1).rmt.copy();
+negative_activation = (u + bias_b) < 0;
+H(h).rmt.zero_columns(negative_activation);
+H(h).rmt.shift_diagonal(-r_H3);  % Same shift as H(3)
+H(h).rmt.description = {['n=' num2str(n) ', dense'], '\mu_E = 1, \mu_I = -1', 'rows zeroed', 'cols zeroed (stimulus), shifted'};
+H(h).rmt.set_plot_circle(r_H3, -r_H3);
+
+%% H(5) - Scale non-diagonal elements to edge of stability
+h = h+1;
+H(h).rmt = H(4).rmt.copy();
+H(h).rmt.scale_nondiagonal_to_spectral_radius(r_H2);
+H(h).rmt.description = {['n=' num2str(n) ', dense'], '\mu_E = 1, \mu_I = -1', 'rows zeroed', 'cols zeroed, scaled to EOC'};
+H(h).rmt.set_plot_circle(r_H3, -r_H3);
+
+
+
+%% Figure 11: Eigenvalue distributions
+f11 = figure(11);
+set(f11, 'Position', [-1715 -114 1420 530], 'Color', 'white')
+tiledlayout(1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax11 = gobjects(4, 1);
+for i_h = 2:length(H)
+    H(i_h).rmt.compute_eigenvalues();
+    ax11(i_h-1) = nexttile;
+    H(i_h).rmt.plot_circle(ax11(i_h-1));
+    hold on
+    H(i_h).rmt.plot_eigenvalue_distribution(ax11(i_h-1));
+    hold off
+end
+
+linkaxes(ax11,'xy')
+
+% ensure left and right xlims are the same and +/- max(abs(xlim))
+xl = xlim(ax11(1));
+new_lim = max(abs(xl));
+xlim(ax11, [-new_lim, new_lim]);
+
+% Customize axes after linking
+for i_h = 2:length(H)
+    axes(ax11(i_h-1));
+    x_lim = xlim;
+    y_lim = ylim;
+    axis off;
+    
+    hold on;
+    h_x = plot(x_lim, [0,0], 'k', 'LineWidth', 1.5);
+    h_y = plot([0,0], y_lim, 'k', 'LineWidth', 1.5);
+    uistack([h_x, h_y], 'bottom');
+
+    text(x_lim(2), 0, ' Re($\lambda$)', 'Interpreter', 'latex', 'VerticalAlignment', 'middle');
+    text(0, y_lim(2), 'Im($\lambda$)', 'Interpreter', 'latex', 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center');
+
+    text(x_lim(1), y_lim(1), H(i_h).rmt.description, ...
+        'HorizontalAlignment', 'left', ...
+        'VerticalAlignment', 'top', ...
+        'FontWeight', 'normal', ...
+        'Rotation', 90);
+
+    xlim(x_lim);
+    ylim(y_lim);
+
+    hold off
+end
+
+%% Figure 12: A matrices
+% Collect all A matrix values to determine clims (reuse from figures 1-5)
+all_H_values = [];
+for i_h = 2:length(H)
+    all_H_values = [all_H_values; H(i_h).rmt.A(:)];
+end
+
+% Use same clims as before for consistency
+max_abs_vals_H = abs(all_H_values);
+clim_val_H = prctile(max_abs_vals_H, 95);
+clims_H = [-clim_val_H, clim_val_H];
+
+%% Create concatenated matrix with constant pixel size
+% Parameters for layout
+n_cols_H = 4;
+n_rows_H = 1;
+row_spacing_H = 250;
+col_spacing_H = 250;
+
+% All H matrices have same size n
+max_size_H = n;
+
+% Create cell array to hold padded matrices
+padded_matrices_H = cell(4, 1);
+pad_before_horiz_array_H = zeros(4, 1);
+for i_h = 2:length(H)
+    A_plot = H(i_h).rmt.A;
+    A_plot(~H(i_h).rmt.dense_mask) = NaN;
+    padded_matrices_H{i_h-1} = A_plot;
+    pad_before_horiz_array_H(i_h-1) = 0;
+end
+
+% Build the concatenated matrix
+concat_matrix_H = [];
+for i_col = 1:n_cols_H
+    if i_col == 1
+        concat_matrix_H = padded_matrices_H{i_col};
+    else
+        concat_matrix_H = [concat_matrix_H, NaN(max_size_H, col_spacing_H), padded_matrices_H{i_col}];
+    end
+end
+
+% Plot the concatenated matrix
+f12 = figure(12);
+set(f12, 'Position', [-1715 -114 1800 450], 'Color', 'white')
+ax12 = axes('Parent', f12);
+
+h12 = imagesc(ax12, concat_matrix_H);
+set(h12, 'AlphaData', ~isnan(concat_matrix_H));
+set(ax12, 'Color', [1 1 1]);
+
+colormap(ax12, custom_cmap);
+caxis(ax12, clims_H);
+axis(ax12, 'equal', 'tight');
+box off
+
+% Add ylabel-style labels
+ylabel_offset_H = -15;
+for i_h = 2:length(H)
+    i_col = i_h - 1;
+    x_pos = (i_col - 1) * (max_size_H + col_spacing_H) + ylabel_offset_H;
+    y_pos = 1;
+    
+    desc = H(i_h).rmt.description;
+    text(ax12, x_pos, y_pos, desc, ...
+        'HorizontalAlignment', 'right', ...
+        'VerticalAlignment', 'bottom', ...
+        'FontWeight', 'normal', ...
+        'Rotation', 90);
+end
+
+set(ax12, 'Visible', 'off');
+
+%% Figure 13: colorbar (reuse same colorbar setup as Figure 3)
+% Uses same colormap and clims as figures 1-5
+
+%% Figure 14: Histograms of A matrices
+f14 = figure(14);
+set(f14, 'Position', [-1715 -114 1420 530], 'Color', 'white')
+tiledlayout(1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax14 = gobjects(4, 1);
+for i_h = 2:length(H)
+    ax14(i_h-1) = nexttile;
+    A_plot = H(i_h).rmt.A;
+    A_plot(~H(i_h).rmt.dense_mask) = NaN;
+    
+    % Separate E and I column values
+    A_E_cols = A_plot(:, H(i_h).rmt.E);
+    A_I_cols = A_plot(:, H(i_h).rmt.I);
+    
+    A_E_vals = A_E_cols(:);
+    A_E_vals = A_E_vals(~isnan(A_E_vals));
+    
+    A_I_vals = A_I_cols(:);
+    A_I_vals = A_I_vals(~isnan(A_I_vals));
+    
+    % Plot overlapping histograms with transparency
+    hold on;
+    histogram(A_E_vals, 50, 'FaceColor', [0 0 1], 'EdgeColor', 'none', 'FaceAlpha', 0.5);
+    histogram(A_I_vals, 50, 'FaceColor', [1 0 0], 'EdgeColor', 'none', 'FaceAlpha', 0.5);
+    hold off;
+    
+    grid off;
+    axis off;
+end
+
+% Link x and y axes across all subplots
+linkaxes(ax14, 'xy');
+
+%% Figure 15: Row sums as vertical plots
+f15 = figure(15);
+set(f15, 'Renderer', 'painters');
+set(f15, 'Position', [-1715 -114 1420 530], 'Color', 'white')
+tiledlayout(1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax15 = gobjects(4, 1);
+for i_h = 2:length(H)
+    ax15(i_h-1) = nexttile;
+    A_curr = H(i_h).rmt.A;
+    A_curr(~H(i_h).rmt.dense_mask) = NaN;
+    n_curr = size(A_curr, 1);
+    row_sums = sum(A_curr, 2, 'omitnan');
+    
+    plot(row_sums, 1:n_curr, 'Color',[0 0 0], 'LineWidth', 1.5);
+    hold on
+    plot([0 0], [1 n_curr], 'Color', [1 0 0], 'LineWidth', 3);
+    hold off;
+    
+    xlabel('Row Sum');
+    ylabel('Row Index');
+    grid off;
+    set(gca, 'YDir', 'reverse');
+    axis off;
+end
+
+% Link x and y axes across all subplots
+linkaxes(ax15, 'xy');
+% Set the xlims to reasonable values
+xlim(ax15(1), 5*xlim(ax15(1)));

@@ -119,6 +119,38 @@ classdef RMT < handle
             end
             new_obj.A = obj.A; % now copy A
         end
+        
+        function zero_columns(obj, logical_vector)
+            % Zero out columns of A where logical_vector is true
+            % logical_vector should be n x 1
+            obj.A(:, logical_vector) = 0;
+            obj.dense_mask(:, logical_vector) = false;
+        end
+        
+        function scale_nondiagonal_to_spectral_radius(obj, target_radius)
+            % Scale non-diagonal elements to achieve target spectral radius
+            % Compute current spectral radius
+            if isempty(obj.eigenvalues)
+                obj.compute_eigenvalues();
+            end
+            current_radius = max(abs(obj.eigenvalues));
+            
+            % Extract diagonal
+            diag_elements = diag(obj.A);
+            
+            % Scale non-diagonal elements
+            if current_radius > 0
+                scale_factor = target_radius / current_radius;
+                obj.A = scale_factor * obj.A;
+                % Restore diagonal to original values
+                for i = 1:obj.n
+                    obj.A(i,i) = diag_elements(i);
+                end
+            end
+            
+            % Recompute eigenvalues after scaling
+            obj.compute_eigenvalues();
+        end
     end
     
 end
