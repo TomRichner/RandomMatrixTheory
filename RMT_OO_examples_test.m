@@ -9,8 +9,8 @@ set(groot, 'DefaultAxesLineWidth', 1.5);
 
 %% default parameters
 make_imagesc_nans_transparent = false; % if false, NaNs are treated as zeros
-n = 500;
-scale_n = 1.5; % scale factor for larger matrices
+n = 750;
+scale_n = 2; % scale factor for larger matrices
 assert(mod(scale_n * n, 1) == 0, 'scale_n * n must be an integer');
 b = 1;
 mu = 0;
