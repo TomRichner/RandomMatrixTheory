@@ -2,6 +2,9 @@ close all
 clear all
 clc
 
+rng(3) % reproducibility
+
+
 set(groot, 'DefaultAxesFontSize', 20);
 set(groot, 'DefaultTextFontSize', 20);
 set(groot, 'DefaultLineLineWidth', 1.5);
@@ -9,14 +12,14 @@ set(groot, 'DefaultAxesLineWidth', 1.5);
 
 %% default parameters
 make_imagesc_nans_transparent = false; % if false, NaNs are treated as zeros
-n = 1000;
+n = 250;
 scale_n = 1; % scale factor for larger matrices
 assert(mod(scale_n * n, 1) == 0, 'scale_n * n must be an integer');
 b = 1;
 mu = 0;
 f = 0.66667;
 mu_E = 1; % relative to b
-mean_indegree = 500; % desired mean number of connections in and out if sparse
+mean_indegree = round(0.5*n); % desired mean number of connections in and out if sparse
 
 
 G = struct();
@@ -38,7 +41,7 @@ G(g).rmt.apply_sparsity(mean_indegree);
 G(g).rmt.description = ['Sparse connections'];
 
 activation_one = rand(n,1)<0.5;
-activation_two= rand(n,1)<0.5;
+activation_two = rand(n,1)<0.5;
 
 %% apply sparse activation one
 g = 4;
@@ -75,7 +78,7 @@ G(g).rmt.description = ['Activation Two'];
 %% figure 1, eigenvalue distribution
 f1 = figure(1);
 % set(f1, 'Position', [100 100 710 1060], 'Color', 'white')
-set(f1, 'Color', 'white')
+set(f1,'Color', 'white')
 
 % tiledlayout(1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 tiledlayout(1, 2, 'TileSpacing', 'compact');
@@ -105,7 +108,7 @@ for i_g = 1:length(ax)
     h_y = plot([0,0], y_lim, 'k', 'LineWidth', 1.5);
     uistack([h_x, h_y], 'bottom');
 
-    text(x_lim(2), 0, ' Re($\lambda$)', 'Interpreter', 'latex', 'VerticalAlignment', 'middle');
+    text(1.35*x_lim(2), 0, ' Re($\lambda$)', 'Interpreter', 'latex', 'VerticalAlignment', 'middle');
     text(0, y_lim(2), 'Im($\lambda$)', 'Interpreter', 'latex', 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center');
 
     % text(x_lim(1), y_lim(1), G(i_g).rmt.description, ...
@@ -120,6 +123,7 @@ for i_g = 1:length(ax)
     hold off
 end
 axis equal
+set(f1, 'Position', [200   200   713   434])
 
 %% figure 2, modified imagesc plot of A
 % Collect all A matrix values to determine clims
@@ -147,7 +151,7 @@ custom_cmap = [blues; reds];
 % Parameters for layout
 n_cols = 2;
 n_rows = 1;
-col_spacing = 250;  % NaN pixels between columns
+col_spacing = 50;  % NaN pixels between columns
 
 % Find maximum matrix size
 max_size = 0;
@@ -203,7 +207,7 @@ end
 
 % Plot the concatenated matrix
 f2 = figure(2);
-set(f2, 'Position', [100 100 1200 600], 'Color', 'white')
+set(f2, 'Position', [100 100 2400 1000], 'Color', 'white')
 ax2 = axes('Parent', f2);
 
 h = imagesc(ax2, concat_matrix);
@@ -215,25 +219,178 @@ caxis(ax2, clims);
 axis(ax2, 'equal', 'tight');
 box off
 
-% Add ylabel-style labels at appropriate positions
-ylabel_offset = -15;  % Position labels this many pixels from the left edge of actual data
-for i_g = 1:length(g_to_plot)
-    g = g_to_plot(i_g);
-    i_col = i_g;
-    
-    % Calculate position
-    % x position: at the left edge of the non-NaN submatrix
-    x_pos = (i_col - 1) * (max_size + col_spacing) + pad_before_horiz_array(i_g) + ylabel_offset;
-    % y position: at the top of the matrix
-    y_pos = 1;
-    
-    % Add text annotation as ylabel
-    desc = G(g).rmt.description;
-    text(ax2, x_pos, y_pos, desc, ...
-        'HorizontalAlignment', 'right', ...
-        'VerticalAlignment', 'bottom', ...
-        'FontWeight', 'normal', ...
-        'Rotation', 90);
-end
+% % Add ylabel-style labels at appropriate positions
+% ylabel_offset = -15;  % Position labels this many pixels from the left edge of actual data
+% for i_g = 1:length(g_to_plot)
+%     g = g_to_plot(i_g);
+%     i_col = i_g;
+% 
+%     % Calculate position
+%     % x position: at the left edge of the non-NaN submatrix
+%     x_pos = (i_col - 1) * (max_size + col_spacing) + pad_before_horiz_array(i_g) + ylabel_offset;
+%     % y position: at the top of the matrix
+%     y_pos = 1;
+% 
+%     % Add text annotation as ylabel
+%     desc = G(g).rmt.description;
+%     text(ax2, x_pos, y_pos, desc, ...
+%         'HorizontalAlignment', 'right', ...
+%         'VerticalAlignment', 'bottom', ...
+%         'FontWeight', 'normal', ...
+%         'Rotation', 90);
+% end
 
 set(ax2, 'Visible', 'off');
+
+%% figure 3 colorbar
+% Create separate colorbar figure
+% Create modified colormap with thin white line at center for colorbar only
+custom_cmap_white = custom_cmap;
+% % Replace center 2-3 pixels with white
+if make_imagesc_nans_transparent % otherwise don't add the white line
+    center_idx = round(size(custom_cmap, 1) / 2);
+    white_line_width = 2; % number of pixels for white line
+    white_indices = center_idx + (-floor(white_line_width/2):floor(white_line_width/2));
+    custom_cmap_white(white_indices, :) = repmat([1 1 1], length(white_indices), 1);
+end
+
+show_colorbar_ticks = false; % set to false to hide all ticks
+
+f3 = figure(3);
+set(f3, 'Position', [100 100 291 213], 'Color', 'white')
+ax3 = axes('Parent', f3);
+colormap(ax3, custom_cmap_white);
+cb = colorbar(ax3, 'Location', 'west');
+caxis(ax3, clims);
+set(ax3, 'Visible', 'off');
+if show_colorbar_ticks
+    set(cb, 'Box', 'off', 'TickLength', 0, 'Ticks', [-1, 0, 1]);
+else
+    set(cb, 'Box', 'off', 'TickLength', 0, 'Ticks', []);
+end
+ylabel(cb, 'Connection Strength');
+
+%% Figure 4: Histograms of A matrices (ignoring NaNs)
+f4 = figure(4);
+set(f4, 'Position', [100 100 800 400], 'Color', 'white')
+tiledlayout(1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax4 = gobjects(length(g_to_plot), 1);
+for i_g = 1:length(g_to_plot)
+    g = g_to_plot(i_g);
+    ax4(i_g) = nexttile;
+    A_plot = G(g).rmt.A;
+    A_plot(~G(g).rmt.dense_mask) = NaN;  % Set non-dense elements to NaN
+    A_plot(logical(eye(size(A_plot)))) = NaN;  % Exclude diagonal entries
+    
+    % Check if this RMT has E/I structure defined
+    if ~isempty(G(g).rmt.E) && ~isempty(G(g).rmt.I)
+        % Separate E and I column values
+        A_E_cols = A_plot(:, G(g).rmt.E);  % Excitatory columns
+        A_I_cols = A_plot(:, G(g).rmt.I);  % Inhibitory columns
+        
+        A_E_vals = A_E_cols(:);
+        A_E_vals = A_E_vals(~isnan(A_E_vals));  % Remove NaNs
+        
+        A_I_vals = A_I_cols(:);
+        A_I_vals = A_I_vals(~isnan(A_I_vals));  % Remove NaNs
+        
+        % Plot overlapping histograms with transparency
+        hold on;
+        histogram(A_E_vals, 50, 'FaceColor', [1 0 0], 'EdgeColor', 'none', 'FaceAlpha', 0.5);  % Red for E
+        histogram(A_I_vals, 50, 'FaceColor', [0 0 1], 'EdgeColor', 'none', 'FaceAlpha', 0.5);  % Blue for I
+        hold off;
+    else
+        % Original gray histogram when no E/I structure
+        A_vals = A_plot(:);
+        A_vals = A_vals(~isnan(A_vals));  % Remove NaNs
+        hold on
+        histogram(A_vals, 50, 'FaceColor', [0 0 1], 'EdgeColor', 'none', 'FaceAlpha', 0.5); % overlapping identical histograms to match the colors above
+        histogram(A_vals, 50, 'FaceColor', [1 0 0], 'EdgeColor', 'none', 'FaceAlpha', 0.5);
+        hold off
+    end
+    
+    desc = G(g).rmt.description;
+    % title(desc);
+    grid off;
+    % axis off;
+end
+
+% Link x and y axes across all subplots
+linkaxes(ax4, 'xy');
+
+%% Figure 5: Row sums as vertical plots
+f5 = figure(5);
+set(f5, 'Renderer', 'painters');
+set(f5, 'Position', [588         197        1200        1040], 'Color', 'white')
+tiledlayout(1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax5 = gobjects(length(g_to_plot), 1);
+for i_g = 1:length(g_to_plot)
+    g = g_to_plot(i_g);
+    ax5(i_g) = nexttile;
+    A_curr = G(g).rmt.A;
+    row_sums = sum(A_curr, 2, 'omitnan');  % Sum across columns, ignoring NaNs
+    
+    % Plot faint red-grey line at zero
+    if g == 6
+        % For g=6, plot red line first so row_sum appears on top
+        % plot([0 0], [1 n], 'Color', [1 0 0], 'LineWidth', 3);
+        % hold on
+        % plot(row_sums, 1:n, 'Color',[0 0 0]', 'LineWidth', 1.5);  
+        stairs([row_sums; row_sums(end)], 1:n+1, 'Color',[0 0 0]', 'LineWidth', 1.5);
+        % hold off;
+    else
+        % plot(row_sums, 1:n, 'Color',[0 0 0], 'LineWidth', 1.5);
+        stairs([row_sums; row_sums(end)], 1:n+1, 'Color',[0 0 0], 'LineWidth', 1.5);
+        % hold on
+        % plot([0 0], [1 n], 'Color', [1 0 0], 'LineWidth', 3);
+        % hold off;
+    end
+    
+    xlabel('Row Sum');
+    ylabel('Row Index');
+    desc = G(g).rmt.description;
+    % title(desc);
+    grid off;
+    set(gca, 'YDir', 'reverse');  % Make row 1 at top
+    axis off;
+end
+
+% Link x and y axes across all subplots
+linkaxes(ax5, 'xy');
+% Set the xlims of ax5(1) to 5x its current xlim
+xlim(ax5(1), 5*xlim(ax5(1)));
+
+%% Figure 6: horizontal concatenated imagesc plot of [double(activation_one), nan_pad, double(activation_two)] similar to figure 2
+% Create concatenated vector with constant spacing (1x2 layout)
+n_cols_6 = 2;
+col_spacing_6 = 250;  % NaN pixels between columns
+
+% Reshape activation vectors to column vectors and convert to double
+act_one_vec = double(not(activation_one(:)))';
+act_two_vec = double(not(activation_two(:)))';
+
+% Build the concatenated matrix (n rows, 2 columns with spacing)
+concat_activation = [act_one_vec, ones(1, col_spacing_6), act_two_vec];
+
+% Create black/white colormap
+bw_cmap = [0 0 0; 1 1 1];  % [black; white]
+
+% Plot the concatenated activation vectors
+f6 = figure(6);
+set(f6, 'Renderer', 'painters');
+set(f6, 'Position', [100 100 1200 65], 'Color', 'white')
+ax6 = axes('Parent', f6);
+
+h6 = imagesc(ax6, concat_activation);
+% set(h6, 'AlphaData', ~isnan(concat_activation));
+set(ax6, 'Color', [1 1 1]);
+
+colormap(ax6, bw_cmap);
+caxis(ax6, [0 1]);
+axis(ax6, 'equal', 'tight');
+box off
+set(ax6, 'Visible', 'off');
+
+save_some_figs_to_folder_2('RMT_figs', 'RMT_example', [], [])
