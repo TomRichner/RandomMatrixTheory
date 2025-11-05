@@ -123,8 +123,7 @@ for i_g = 1:length(G)
     hold off
 end
 
-
-%% Make figure of A matrices
+%% Figure 2 Make figure of A matrices
 % Collect all A matrix values to determine clims
 all_A_values = [];
 for i_g = 1:length(G)

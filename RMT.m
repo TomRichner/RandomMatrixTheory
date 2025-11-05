@@ -16,6 +16,7 @@ classdef RMT < handle
         r
         x
         description
+        row_sum_Z_diff
     end
     
     methods
@@ -27,6 +28,7 @@ classdef RMT < handle
             obj.A = b*randn(n,n)+mu;
             obj.density = 1; % default to 1
             obj.dense_mask = true(n,n);
+            obj.row_sum_Z_diff = zeros(n,n);
         end
         
         function apply_sparsity(obj, mean_indegree)
@@ -68,6 +70,7 @@ classdef RMT < handle
                     Z_out(i, :) = row;
                 end
             end
+            obj.row_sum_Z_diff = Z_out - Z_in;
             obj.A = Z_out;
         end
         
@@ -123,8 +126,21 @@ classdef RMT < handle
         function zero_columns(obj, logical_vector)
             % Zero out columns of A where logical_vector is true
             % logical_vector should be n x 1
+            logical_vector = logical(logical_vector(:));
+            cols_to_zero = find(logical_vector);
+            if isempty(cols_to_zero)
+                return;
+            end
+
+            diag_indices = sub2ind(size(obj.A), cols_to_zero, cols_to_zero);
+            preserved_diag_A = obj.A(diag_indices);
+            preserved_diag_mask = obj.dense_mask(diag_indices);
+
             obj.A(:, logical_vector) = 0;
             obj.dense_mask(:, logical_vector) = false;
+
+            obj.A(diag_indices) = preserved_diag_A;
+            obj.dense_mask(diag_indices) = preserved_diag_mask;
         end
         
         function scale_nondiagonal_to_spectral_radius(obj, target_radius)
