@@ -393,4 +393,4 @@ axis(ax6, 'equal', 'tight');
 box off
 set(ax6, 'Visible', 'off');
 
-save_some_figs_to_folder_2('RMT_figs', 'RMT_example', [], [])
+% save_some_figs_to_folder_2('RMT_figs', 'RMT_example', [], [])
