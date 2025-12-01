@@ -2,6 +2,8 @@ classdef RMT < handle
     properties
         n
         b
+        b_E
+        b_I
         mu
         A
         dense_mask
@@ -37,21 +39,54 @@ classdef RMT < handle
             obj.A(~obj.dense_mask) = 0;
         end
         
-        function set_rajan_means(obj, f, mu_E)
+        function set_rajan_f(obj, f)
             obj.f = f;
-            obj.mu_E = mu_E;
-            
             obj.E = false(obj.n, 1);
             obj.E(1:round(f*obj.n)) = true;
             obj.I = ~obj.E;
+        end
+
+        function set_rajan_means(obj, mu_E)
+            if isempty(obj.f)
+                error('RMT:fNotSet', 'Fraction f must be set using set_rajan_f before setting means.');
+            end
+            obj.mu_E = mu_E;
             
-            obj.mu_I = -f * mu_E / (1-f);
+            obj.mu_I = -obj.f * mu_E / (1-obj.f);
             
             obj.M = zeros(obj.n, obj.n);
             obj.M(:, obj.E) = obj.mu_E;
             obj.M(:, obj.I) = obj.mu_I;
             
+            % Apply sparsity mask to M
+            if ~isempty(obj.dense_mask)
+                 obj.M(~obj.dense_mask) = 0;
+            end
+            
             obj.A = obj.A + obj.M;
+        end
+
+        function set_rajan_stdev(obj, b_E, b_I)
+            if isempty(obj.f)
+                error('RMT:fNotSet', 'Fraction f must be set using set_rajan_f before setting standard deviations.');
+            end
+            obj.b_E = b_E;
+            obj.b_I = b_I;
+
+            % Check if means are applied
+            means_applied = ~isempty(obj.M) && any(obj.M(:) ~= 0);
+            
+            if means_applied
+                obj.A = obj.A - obj.M;
+            end
+            
+            % Apply scaling
+            obj.A(:, obj.E) = obj.A(:, obj.E) * b_E;
+            obj.A(:, obj.I) = obj.A(:, obj.I) * b_I;
+            
+            if means_applied
+                obj.A = obj.A + obj.M;
+            end
         end
         
         function row_sum_to_zero(obj)
@@ -84,7 +119,12 @@ classdef RMT < handle
         end
         
         function plot_eigenvalue_distribution(obj, target_ax)
-            scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 36, 'MarkerEdgeColor',[0 0 0], 'MarkerFaceColor', 'white');
+            % Option 1: Semitransparent grey circles, filled, no edge
+            scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 36, 'MarkerFaceColor', [0.5 0.5 0.5], 'MarkerEdgeColor', 'none', 'MarkerFaceAlpha', 0.5);
+            
+            % Option 2: Black circles with no fill
+            % scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 36, 'MarkerEdgeColor', [0 0 0], 'MarkerFaceColor', 'none');
+            
             axis(target_ax, 'equal');
             xlabel(target_ax, 'Re($\lambda$)', 'Interpreter', 'latex');
             ylabel(target_ax, 'Im($\lambda$)', 'Interpreter', 'latex');

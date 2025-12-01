@@ -77,7 +77,7 @@ end
 
 %% Make figures of different scenarios
 f1 = figure(1);
-set(f1, 'Position', [-1715 -114 710 1060], 'Color', 'white')
+set(f1, 'Position', [100 200 710 1060], 'Color', 'white')
 tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax = gobjects(length(G), 1);
@@ -221,7 +221,7 @@ end
 
 % Plot the concatenated matrix
 f2 = figure(2);
-set(f2, 'Position', [-1715 -114 900 1060], 'Color', 'white')
+set(f2, 'Position', [100 200 900 1060], 'Color', 'white')
 ax2 = axes('Parent', f2);
 
 h = imagesc(ax2, concat_matrix);
@@ -272,7 +272,7 @@ end
 show_colorbar_ticks = false; % set to false to hide all ticks
 
 f3 = figure(3);
-set(f3, 'Position', [-794   608   291   213], 'Color', 'white')
+set(f3, 'Position', [100 200   291   213], 'Color', 'white')
 ax3 = axes('Parent', f3);
 colormap(ax3, custom_cmap_white);
 cb = colorbar(ax3, 'Location', 'west');
@@ -287,7 +287,7 @@ ylabel(cb, 'Connection Strength');
 
 %% Figure 4: Histograms of A matrices (ignoring NaNs)
 f4 = figure(4);
-set(f4, 'Position', [-1715 -114 640 1060], 'Color', 'white')
+set(f4, 'Position', [100 200 640 1060], 'Color', 'white')
 tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax4 = gobjects(length(G), 1);
@@ -335,7 +335,7 @@ linkaxes(ax4, 'xy');
 %% Figure 5: Row sums as vertical plots
 f5 = figure(5);
 set(f5, 'Renderer', 'painters');
-set(f5, 'Position', [-1715 -114 640 1060], 'Color', 'white')
+set(f5, 'Position', [100 200 640 1060], 'Color', 'white')
 tiledlayout(ceil(length(G)/2), 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax5 = gobjects(length(G), 1);
@@ -453,7 +453,7 @@ H(h).rmt.set_plot_circle(r_H3, -r_H3);
 
 %% Figure 11: Eigenvalue distributions
 f11 = figure(11);
-set(f11, 'Position', [-1715 -114 1420 530], 'Color', 'white')
+set(f11, 'Position', [100 200 1420 530], 'Color', 'white')
 tiledlayout(1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax11 = gobjects(4, 1);
@@ -548,7 +548,7 @@ end
 
 % Plot the concatenated matrix
 f12 = figure(12);
-set(f12, 'Position', [-1715 -114 1800 450], 'Color', 'white')
+set(f12, 'Position', [100 200 1800 450], 'Color', 'white')
 ax12 = axes('Parent', f12);
 
 h12 = imagesc(ax12, concat_matrix_H);
@@ -582,7 +582,7 @@ set(ax12, 'Visible', 'off');
 
 %% Figure 14: Histograms of A matrices
 f14 = figure(14);
-set(f14, 'Position', [-1715 -114 1420 530], 'Color', 'white')
+set(f14, 'Position', [100 200 1420 530], 'Color', 'white')
 tiledlayout(1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax14 = gobjects(4, 1);
@@ -617,7 +617,7 @@ linkaxes(ax14, 'xy');
 %% Figure 15: Row sums as vertical plots
 f15 = figure(15);
 set(f15, 'Renderer', 'painters');
-set(f15, 'Position', [-1715 -114 1420 530], 'Color', 'white')
+set(f15, 'Position', [100 200 1420 530], 'Color', 'white')
 tiledlayout(1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax15 = gobjects(4, 1);
