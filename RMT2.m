@@ -180,7 +180,33 @@ classdef RMT2 < handle
         end
 
         function R = compute_expected_radius(obj)
-            R = sqrt(obj.density * obj.n * (obj.f * obj.b_E^2 + (1 - obj.f) * obj.b_I^2));
+            % Implements Equation 18 from Harris et al. (2023)
+            % R = sqrt(N * [f*sigma_se^2 + (1-f)*sigma_si^2])
+            % Where sigma_sk^2 (Eq 16) accounts for both variance and mean due to sparsity.
+            
+            alpha = obj.density;
+            
+            % The mean of the entries before sparsification (dense mean)
+            % For Excitatory cols: mu + mu_E
+            % For Inhibitory cols: mu + mu_I
+            mu_dense_E = obj.mu + obj.mu_E;
+            mu_dense_I = obj.mu + obj.mu_I;
+            
+            % The standard deviation of the entries before sparsification (dense sigma)
+            % For Excitatory cols: b_E
+            % For Inhibitory cols: b_I
+            sigma_dense_E = obj.b_E;
+            sigma_dense_I = obj.b_I;
+            
+            % Variance of the sparse entries (Eq. 16/B4/B5 in paper)
+            % Var = alpha * sigma_dense^2 + alpha * (1 - alpha) * mu_dense^2
+            var_sparse_E = alpha * sigma_dense_E^2 + alpha * (1 - alpha) * mu_dense_E^2;
+            var_sparse_I = alpha * sigma_dense_I^2 + alpha * (1 - alpha) * mu_dense_I^2;
+            
+            % Total Variance weighted by population fraction f
+            total_variance = obj.f * var_sparse_E + (1 - obj.f) * var_sparse_I;
+            
+            R = sqrt(obj.n * total_variance);
         end
 
         function sigma_I = compute_sigma_I_from_eff(obj, sigma_eff, sigma_E)
