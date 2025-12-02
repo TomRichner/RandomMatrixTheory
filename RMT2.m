@@ -22,6 +22,8 @@ classdef RMT2 < handle
         description
         row_sum_zero_enabled
         post_sparsification_zrs_enabled
+        color_outliers
+        outlier_factor
     end
     
     methods
@@ -38,6 +40,11 @@ classdef RMT2 < handle
             obj.b_E = 1;
             obj.b_I = 1;
             obj.mu_E = 0;
+            obj.color_outliers = false;
+            obj.outlier_factor = 1.05;
+
+            % Initialize f, E, I and dependent matrices (mu_I, M, D)
+            obj.set_f(0.5);
             
             obj.S = true(n,n);
             obj.D = eye(n);
@@ -118,9 +125,22 @@ classdef RMT2 < handle
             obj.post_sparsification_zrs_enabled = enable;
         end
 
+        function set_color_outliers(obj, enable)
+            obj.color_outliers = enable;
+        end
+
+        function set_outlier_factor(obj, factor)
+            obj.outlier_factor = factor;
+        end
+
         function compute_AD_ZRS(obj)
-            Z_in = obj.A * obj.D + obj.mu;
-            vec = mean(Z_in, 2);
+            Z_in = obj.S .* (obj.A * obj.D + obj.mu);
+            row_counts = sum(obj.S, 2);
+            
+            vec = zeros(obj.n, 1);
+            mask = row_counts > 0;
+            vec(mask) = sum(Z_in(mask, :), 2) ./ row_counts(mask);
+            
             obj.AD_ZRS = repmat(vec, 1, obj.n);
         end
         
@@ -161,11 +181,40 @@ classdef RMT2 < handle
         end
         
         function plot_eigenvalue_distribution(obj, target_ax)
-            % Option 1: Semitransparent grey circles, filled, no edge
-            scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 36, 'MarkerFaceColor', [0.5 0.5 0.5], 'MarkerEdgeColor', 'none', 'MarkerFaceAlpha', 0.5);
-            
-            % Option 2: Black circles with no fill
-            % scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 36, 'MarkerEdgeColor', [0 0 0], 'MarkerFaceColor', 'none');
+            % Plot style flag: 1 = semitransparent grey filled, 2 = black empty circles
+            plot_style_flag = 2; 
+
+            if obj.color_outliers
+                R = obj.compute_expected_radius();
+                outlier_threshold = obj.outlier_factor * R;
+                is_outlier = abs(obj.eigenvalues - obj.shift) > outlier_threshold;
+                
+                if plot_style_flag == 1
+                    % Option 1: Semitransparent grey circles, filled, no edge
+                    scatter(target_ax, real(obj.eigenvalues(~is_outlier)), imag(obj.eigenvalues(~is_outlier)), 30, 'MarkerFaceColor', [0.5 0.5 0.5], 'MarkerEdgeColor', 'none', 'MarkerFaceAlpha', 0.3);
+                else
+                    % Option 2: Black circles with no fill
+                    scatter(target_ax, real(obj.eigenvalues(~is_outlier)), imag(obj.eigenvalues(~is_outlier)), 25, 'MarkerEdgeColor', [0 0 0], 'MarkerFaceColor', 'none');
+                end
+                
+                wasHeld = ishold(target_ax);
+                hold(target_ax, 'on');
+                
+                % Plot outliers (green filled)
+                scatter(target_ax, real(obj.eigenvalues(is_outlier)), imag(obj.eigenvalues(is_outlier)), 35, 'MarkerFaceColor', [0 0.7 0], 'MarkerEdgeColor', 'none');
+                
+                if ~wasHeld
+                    hold(target_ax, 'off');
+                end
+            else
+                if plot_style_flag == 1
+                    % Option 1: Semitransparent grey circles, filled, no edge
+                    scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 30, 'MarkerFaceColor', [0.5 0.5 0.5], 'MarkerEdgeColor', 'none', 'MarkerFaceAlpha', 0.3);
+                else
+                    % Option 2: Black circles with no fill
+                    scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 25, 'MarkerEdgeColor', [0 0 0], 'MarkerFaceColor', 'none');
+                end
+            end
             
             axis(target_ax, 'equal');
             xlabel(target_ax, 'Re($\lambda$)', 'Interpreter', 'latex');
