@@ -1,3 +1,5 @@
+.DS_Store
+
 # MATLAB autosave and backup files
 *.asv
 *.m~

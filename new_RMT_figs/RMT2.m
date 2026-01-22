@@ -15,6 +15,7 @@ classdef RMT2 < handle
         shift
         D
         M
+        AD_ZRS
         eigenvalues
         r
         x
@@ -24,13 +25,13 @@ classdef RMT2 < handle
         color_outliers
         outlier_factor
     end
-
+    
     methods
         function obj = RMT2(n)
             % constructor
             obj.n = n;
             obj.A = randn(n,n);
-
+            
             % defaults
             obj.mu = 0;
             obj.f = 0.5;
@@ -40,18 +41,19 @@ classdef RMT2 < handle
             obj.b_I = 1;
             obj.mu_E = 0;
             obj.color_outliers = false;
-            obj.outlier_factor = 1.03;
+            obj.outlier_factor = 1.05;
 
             % Initialize f, E, I and dependent matrices (mu_I, M, D)
             obj.set_f(0.5);
-
+            
             obj.S = true(n,n);
             obj.D = eye(n);
             obj.M = zeros(n,n);
+            obj.AD_ZRS = zeros(n,n);
             obj.row_sum_zero_enabled = false;
             obj.post_sparsification_zrs_enabled = false;
         end
-
+        
         function set_mu(obj, mu)
             obj.mu = mu;
         end
@@ -61,50 +63,50 @@ classdef RMT2 < handle
             obj.E = false(obj.n, 1);
             obj.E(1:round(f*obj.n)) = true;
             obj.I = ~obj.E;
-
+            
             % Update dependent matrices if parameters are already set
             obj.update_D();
             obj.update_M();
         end
-
+        
         function set_mean_parameters(obj, mu_E)
             obj.mu_E = mu_E;
             if isempty(obj.f)
-                % If f is not set, we can't calculate mu_I yet.
-                % But constructor sets default f, so this branch might be moot
-                % unless f was cleared. Assuming f is always valid.
-                warning('RMT2:fNotSet', 'f is not set properly, using default or previous value.');
+                 % If f is not set, we can't calculate mu_I yet. 
+                 % But constructor sets default f, so this branch might be moot 
+                 % unless f was cleared. Assuming f is always valid.
+                 warning('RMT2:fNotSet', 'f is not set properly, using default or previous value.');
             end
-
+            
             obj.update_M();
         end
-
+        
         function set_stdev_parameters(obj, b_E, b_I)
             obj.b_E = b_E;
             obj.b_I = b_I;
             obj.update_D();
         end
-
+        
         function update_D(obj)
             if isempty(obj.E) || isempty(obj.I)
                 % Can happen if set_f hasn't been called, but constructor handles defaults
                 % If needed, re-call set_f logic or just wait
                 return;
             end
-
+            
             diag_vals = zeros(obj.n, 1);
             diag_vals(obj.E) = obj.b_E;
             diag_vals(obj.I) = obj.b_I;
             obj.D = diag(diag_vals);
         end
-
+        
         function update_M(obj)
             if isempty(obj.f) || isempty(obj.E)
                 return;
             end
-
+            
             obj.mu_I = -obj.f * obj.mu_E / (1-obj.f);
-
+            
             obj.M = zeros(obj.n, obj.n);
             obj.M(:, obj.E) = obj.mu_E;
             obj.M(:, obj.I) = obj.mu_I;
@@ -114,7 +116,7 @@ classdef RMT2 < handle
             obj.density = density;
             obj.S = rand(obj.n, obj.n) < obj.density;
         end
-
+        
         function set_row_sum_zero(obj, enable)
             obj.row_sum_zero_enabled = enable;
         end
@@ -131,75 +133,62 @@ classdef RMT2 < handle
             obj.outlier_factor = factor;
         end
 
-        function is_dense = check_S_is_dense(obj)
-            % Check if S is fully dense (all ones)
-            is_dense = all(obj.S(:));
+        function compute_AD_ZRS(obj)
+            Z_in = obj.S .* (obj.A * obj.D + obj.mu);
+            row_counts = sum(obj.S, 2);
+            
+            vec = zeros(obj.n, 1);
+            mask = row_counts > 0;
+            vec(mask) = sum(Z_in(mask, :), 2) ./ row_counts(mask);
+            
+            obj.AD_ZRS = repmat(vec, 1, obj.n);
         end
-
-        function is_valid = check_S_is_binary(obj)
-            % Check if S contains only 0s and 1s
-            is_valid = all(obj.S(:) == 0 | obj.S(:) == 1);
-        end
-
+        
         function W = get_W(obj)
-            % Validate mutual exclusion
-            if obj.row_sum_zero_enabled && obj.post_sparsification_zrs_enabled
-                error('RMT2:InvalidZRS', 'Cannot enable both row_sum_zero and post_sparsification_zrs simultaneously.');
-            end
-
             if obj.row_sum_zero_enabled
-                % Dense ZRS: zeros A*D+M together, then adds mu
-                if ~obj.check_S_is_dense()
-                    error('RMT2:InvalidS', 'row_sum_zero_enabled requires S to be fully dense (all ones).');
-                end
-
-                A_D_M = obj.A * obj.D + obj.M;
-                row_means = mean(A_D_M, 2);         % n×1 vector
-                W = A_D_M + obj.mu - row_means;     % add mu, subtract row mean
-
-            elseif obj.post_sparsification_zrs_enabled
-                % Sparse ZRS: zeros A*D at sparse locations, then adds mu+M
-                if ~obj.check_S_is_binary()
-                    error('RMT2:InvalidS', 'post_sparsification_zrs requires S to contain only 0s and 1s.');
-                end
-
-                % Step 1: Compute sparsified A*D
-                A_D = obj.A * obj.D;
-                A_D_sparse = obj.S .* A_D;
-
-                % Step 2: Zero each row of the sparse A*D
-                row_sums = sum(A_D_sparse, 2);
-                row_counts = sum(obj.S, 2);
-                correction = row_sums ./ max(row_counts, 1);  % avoid div by 0
-                A_D_zrs = A_D_sparse - obj.S .* correction;   % only subtract at S locations
-
-                % Step 3: Add mu and M AFTER zeroing (preserves low-rank)
-                W = A_D_zrs + obj.S .* (obj.mu + obj.M);
-
+                obj.compute_AD_ZRS();
+                term = (obj.A * obj.D + obj.mu - obj.AD_ZRS + obj.M);
             else
-                % No ZRS: standard computation
-                term = obj.A * obj.D + obj.mu + obj.M;
-                W = obj.S .* term;
+                term = (obj.A * obj.D + obj.mu + obj.M);
             end
-
-            W = W + obj.shift * eye(obj.n);
+            
+            W_temp = obj.S .* term;
+            
+            if obj.post_sparsification_zrs_enabled
+                 % Calculate row sums of the sparsified matrix
+                 row_sums = sum(W_temp, 2);
+                 
+                 % Calculate number of non-zero elements per row in S
+                 row_counts = sum(obj.S ~= 0, 2);
+                 
+                 % Compute correction per non-zero element
+                 correction_vals = zeros(obj.n, 1);
+                 mask_nz = row_counts > 0;
+                 correction_vals(mask_nz) = row_sums(mask_nz) ./ row_counts(mask_nz);
+                 
+                 % Create W_ZRS matrix
+                 W_ZRS = obj.S .* repmat(correction_vals, 1, obj.n);
+                 
+                 W_temp = W_temp - W_ZRS;
+            end
+            
+            W = W_temp + obj.shift * eye(obj.n);
         end
-
-
+        
         function compute_eigenvalues(obj)
             W = obj.get_W();
             obj.eigenvalues = eig(W);
         end
-
+        
         function plot_eigenvalue_distribution(obj, target_ax)
             % Plot style flag: 1 = semitransparent grey filled, 2 = black empty circles
-            plot_style_flag = 2;
+            plot_style_flag = 2; 
 
             if obj.color_outliers
                 R = obj.compute_expected_radius();
                 outlier_threshold = obj.outlier_factor * R;
                 is_outlier = abs(obj.eigenvalues - obj.shift) > outlier_threshold;
-
+                
                 if plot_style_flag == 1
                     % Option 1: Semitransparent grey circles, filled, no edge
                     scatter(target_ax, real(obj.eigenvalues(~is_outlier)), imag(obj.eigenvalues(~is_outlier)), 30, 'MarkerFaceColor', [0.5 0.5 0.5], 'MarkerEdgeColor', 'none', 'MarkerFaceAlpha', 0.3);
@@ -207,13 +196,13 @@ classdef RMT2 < handle
                     % Option 2: Black circles with no fill
                     scatter(target_ax, real(obj.eigenvalues(~is_outlier)), imag(obj.eigenvalues(~is_outlier)), 25, 'MarkerEdgeColor', [0 0 0], 'MarkerFaceColor', 'none');
                 end
-
+                
                 wasHeld = ishold(target_ax);
                 hold(target_ax, 'on');
-
+                
                 % Plot outliers (green filled)
                 scatter(target_ax, real(obj.eigenvalues(is_outlier)), imag(obj.eigenvalues(is_outlier)), 35, 'MarkerFaceColor', [0 0.7 0], 'MarkerEdgeColor', 'none');
-
+                
                 if ~wasHeld
                     hold(target_ax, 'off');
                 end
@@ -226,12 +215,12 @@ classdef RMT2 < handle
                     scatter(target_ax, real(obj.eigenvalues), imag(obj.eigenvalues), 25, 'MarkerEdgeColor', [0 0 0], 'MarkerFaceColor', 'none');
                 end
             end
-
+            
             axis(target_ax, 'equal');
             xlabel(target_ax, 'Re($\lambda$)', 'Interpreter', 'latex');
             ylabel(target_ax, 'Im($\lambda$)', 'Interpreter', 'latex');
         end
-
+        
         function max_real = get_max_real_eig(obj)
             if isempty(obj.eigenvalues)
                 obj.compute_eigenvalues();
@@ -243,98 +232,50 @@ classdef RMT2 < handle
             % Implements Equation 18 from Harris et al. (2023)
             % R = sqrt(N * [f*sigma_se^2 + (1-f)*sigma_si^2])
             % Where sigma_sk^2 (Eq 16) accounts for both variance and mean due to sparsity.
-
+            
             alpha = obj.density;
-
+            
             % The mean of the entries before sparsification (dense mean)
             % For Excitatory cols: mu + mu_E
             % For Inhibitory cols: mu + mu_I
             mu_dense_E = obj.mu + obj.mu_E;
             mu_dense_I = obj.mu + obj.mu_I;
-
+            
             % The standard deviation of the entries before sparsification (dense sigma)
             % For Excitatory cols: b_E
             % For Inhibitory cols: b_I
             sigma_dense_E = obj.b_E;
             sigma_dense_I = obj.b_I;
-
+            
             % Variance of the sparse entries (Eq. 16/B4/B5 in paper)
             % Var = alpha * sigma_dense^2 + alpha * (1 - alpha) * mu_dense^2
             var_sparse_E = alpha * sigma_dense_E^2 + alpha * (1 - alpha) * mu_dense_E^2;
             var_sparse_I = alpha * sigma_dense_I^2 + alpha * (1 - alpha) * mu_dense_I^2;
-
+            
             % Total Variance weighted by population fraction f
             total_variance = obj.f * var_sparse_E + (1 - obj.f) * var_sparse_I;
-
+            
             R = sqrt(obj.n * total_variance);
         end
 
         function sigma_I = compute_sigma_I_from_eff(obj, sigma_eff, sigma_E)
-            term = (sigma_eff^2 - obj.f * sigma_E^2) / (1 - obj.f);
-            if term < 0
-                error('RMT2:InvalidSigma', 'Invalid parameters: Effective sigma cannot be achieved with given sigma_E and f.');
-            end
-            sigma_I = sqrt(term);
+             term = (sigma_eff^2 - obj.f * sigma_E^2) / (1 - obj.f);
+             if term < 0
+                 error('RMT2:InvalidSigma', 'Invalid parameters: Effective sigma cannot be achieved with given sigma_E and f.');
+             end
+             sigma_I = sqrt(term);
         end
-
+        
         function set_plot_circle(obj, r, x)
             obj.r = r;
             obj.x = x;
         end
-
+        
         function plot_circle(obj, target_ax)
-            pos = [obj.x - obj.r, -obj.r, 2*obj.r, 2*obj.r];
-            rectangle(target_ax, 'Position', pos, 'Curvature', [1,1], 'EdgeColor', 'k', 'LineWidth', 1);
+             pos = [obj.x - obj.r, -obj.r, 2*obj.r, 2*obj.r];
+             rectangle(target_ax, 'Position', pos, 'Curvature', [1,1], 'EdgeColor', 'k', 'LineWidth', 1);
         end
-
-        function plot_weight_histogram(obj, target_ax, num_bins)
-            % Plots overlapping histograms of E and I weights
-            % E weights: 50% opacity red
-            % I weights: 50% opacity blue
-            % No box, no bar outlines
-
-            if nargin < 3
-                num_bins = 50;
-            end
-
-            W = obj.get_W();
-
-            % Remove diagonal (set to 0, which are removed below)
-            W(1:obj.n+1:end) = 0;
-
-            % Extract weights from E and I columns
-            W_E = W(:, obj.E);
-            W_I = W(:, obj.I);
-
-            % Flatten to vectors
-            weights_E = W_E(:);
-            weights_I = W_I(:);
-
-            % Remove zero weights
-            weights_E = weights_E(weights_E ~= 0);
-            weights_I = weights_I(weights_I ~= 0);
-
-            % Determine common bin edges
-            all_weights = [weights_E; weights_I];
-            bin_edges = linspace(min(all_weights), max(all_weights), num_bins + 1);
-
-            % Plot histograms
-            hold(target_ax, 'on');
-
-            histogram(target_ax, weights_E, bin_edges, 'FaceColor', [1 0 0], 'FaceAlpha', 0.5, 'EdgeColor', 'none');
-            histogram(target_ax, weights_I, bin_edges, 'FaceColor', [0 0 1], 'FaceAlpha', 0.5, 'EdgeColor', 'none');
-
-            % Remove box
-            box(target_ax, 'off');
-
-            % Labels
-            xlabel(target_ax, 'Weight');
-            ylabel(target_ax, 'Count');
-            legend(target_ax, {'E', 'I'}, 'Box', 'off');
-
-            hold(target_ax, 'off');
-        end
-
+        
         function new_obj = copy(obj)
             new_obj = RMT2(obj.n);
             props = properties(obj);
