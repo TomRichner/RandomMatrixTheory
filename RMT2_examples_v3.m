@@ -27,9 +27,9 @@ G = struct();
 %% 1. Standard Circular Law with outlier and shift
 g = 1;
 G(g).rmt = RMT2(n);
-b_E = 0.5/sqrt(n);
-b_eff = 0.5/sqrt(n);
-G(g).rmt.set_mu(1.2*b_eff/sqrt(n));
+b_E = 1/sqrt(n);
+b_eff = 1/sqrt(n);
+% G(g).rmt.set_mu(1.2*b_eff);
 % Calculate b_I using the method from RMT2
 b_I = G(g).rmt.compute_sigma_I_from_eff(b_eff, b_E);
 G(g).rmt.set_stdev_parameters(b_E, b_I);

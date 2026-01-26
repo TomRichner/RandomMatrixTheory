@@ -19,6 +19,7 @@ classdef RMT2 < handle
         r
         x
         description
+        zero_pop_mean
         row_sum_zero_enabled
         post_sparsification_zrs_enabled
         color_outliers
@@ -40,7 +41,7 @@ classdef RMT2 < handle
             obj.b_I = 1;
             obj.mu_E = 0;
             obj.color_outliers = false;
-            obj.outlier_factor = 1.03;
+            obj.outlier_factor = 1.02;
 
             % Initialize f, E, I and dependent matrices (mu_I, M, D)
             obj.set_f(0.5);
@@ -50,6 +51,7 @@ classdef RMT2 < handle
             obj.M = zeros(n,n);
             obj.row_sum_zero_enabled = false;
             obj.post_sparsification_zrs_enabled = false;
+            obj.zero_pop_mean = false;
         end
 
         function set_mu(obj, mu)
@@ -110,9 +112,13 @@ classdef RMT2 < handle
             obj.M(:, obj.I) = obj.mu_I;
         end
 
-        function set_sparsity(obj, density)
+        function set_density(obj, density)
             obj.density = density;
             obj.S = rand(obj.n, obj.n) < obj.density;
+        end
+
+        function set_zero_pop_mean(obj, enable)
+            obj.zero_pop_mean = enable;
         end
 
         function set_row_sum_zero(obj, enable)
@@ -147,6 +153,10 @@ classdef RMT2 < handle
                 error('RMT2:InvalidZRS', 'Cannot enable both row_sum_zero and post_sparsification_zrs simultaneously.');
             end
 
+            if obj.zero_pop_mean && obj.post_sparsification_zrs_enabled
+                error('RMT2:InvalidZRS', 'Cannot enable zero_pop_mean when post_sparsification_zrs is enabled.');
+            end
+
             if obj.row_sum_zero_enabled
                 % Dense ZRS: zeros A*D+M together, then adds mu
                 if ~obj.check_S_is_dense()
@@ -155,7 +165,15 @@ classdef RMT2 < handle
 
                 A_D_M = obj.A * obj.D + obj.M;
                 row_means = mean(A_D_M, 2);         % n×1 vector
-                W = A_D_M + obj.mu - row_means;     % add mu, subtract row mean
+                if obj.zero_pop_mean
+                    % If enabled, mu is effectively included in the ZRS (so it is removed)
+                    % Matrix has row sums exactly 0
+                    W = A_D_M - row_means;
+                else
+                    % Standard ZRS: Center A*D+M, then add mu
+                    % Matrix has row sums equal to mu
+                    W = A_D_M + obj.mu - row_means;     % add mu, subtract row mean
+                end
 
             elseif obj.post_sparsification_zrs_enabled
                 % Sparse ZRS: zeros A*D at sparse locations, then adds mu+M
@@ -232,6 +250,52 @@ classdef RMT2 < handle
             ylabel(target_ax, 'Im($\lambda$)', 'Interpreter', 'latex');
         end
 
+        function plot_discrete_eigenvalue_distribution(obj, target_ax, dt)
+            % Plot eigenvalues of the equivalent discrete-time system
+            % Uses matrix exponential: A_discrete = expm(W * dt)
+            % For discrete systems, stability requires |lambda| < 1
+            %
+            % Arguments:
+            %   target_ax - axes handle to plot on
+            %   dt - time step (default: 0.01)
+
+            if nargin < 3
+                dt = 0.01;
+            end
+
+            % Compute discrete system matrix via matrix exponential
+            W = obj.get_W();
+            A_discrete = expm(W * dt);
+
+            % Compute eigenvalues of discrete system
+            discrete_eigenvalues = eig(A_discrete);
+
+            % Plot style flag: 1 = semitransparent grey filled, 2 = black empty circles
+            plot_style_flag = 2;
+
+            if plot_style_flag == 1
+                % Option 1: Semitransparent grey circles, filled, no edge
+                scatter(target_ax, real(discrete_eigenvalues), imag(discrete_eigenvalues), 30, 'MarkerFaceColor', [0.5 0.5 0.5], 'MarkerEdgeColor', 'none', 'MarkerFaceAlpha', 0.3);
+            else
+                % Option 2: Black circles with no fill
+                scatter(target_ax, real(discrete_eigenvalues), imag(discrete_eigenvalues), 25, 'MarkerEdgeColor', [0 0 0], 'MarkerFaceColor', 'none');
+            end
+
+            % Draw unit circle (stability boundary for discrete systems)
+            wasHeld = ishold(target_ax);
+            hold(target_ax, 'on');
+            theta = linspace(0, 2*pi, 100);
+            plot(target_ax, cos(theta), sin(theta), 'k--', 'LineWidth', 1);
+            if ~wasHeld
+                hold(target_ax, 'off');
+            end
+
+            axis(target_ax, 'equal');
+            xlabel(target_ax, 'Re($\lambda$)', 'Interpreter', 'latex');
+            ylabel(target_ax, 'Im($\lambda$)', 'Interpreter', 'latex');
+            title(target_ax, sprintf('Discrete System Eigenvalues (dt = %.4f)', dt));
+        end
+
         function max_real = get_max_real_eig(obj)
             if isempty(obj.eigenvalues)
                 obj.compute_eigenvalues();
@@ -239,7 +303,7 @@ classdef RMT2 < handle
             max_real = max(real(obj.eigenvalues));
         end
 
-        function R = compute_expected_radius(obj)
+        function [R, total_variance] = compute_expected_radius(obj)
             % Implements Equation 18 from Harris et al. (2023)
             % R = sqrt(N * [f*sigma_se^2 + (1-f)*sigma_si^2])
             % Where sigma_sk^2 (Eq 16) accounts for both variance and mean due to sparsity.
@@ -333,6 +397,61 @@ classdef RMT2 < handle
             legend(target_ax, {'E', 'I'}, 'Box', 'off');
 
             hold(target_ax, 'off');
+        end
+
+        function display_parameters(obj)
+            % Display measured statistics from W and compare to set property values
+            W = obj.get_W();
+
+            % Remove diagonal for statistics
+            W_no_diag = W;
+            W_no_diag(1:obj.n+1:end) = NaN;
+
+            % Extract E and I columns (excluding diagonal)
+            W_E = W_no_diag(:, obj.E);
+            W_I = W_no_diag(:, obj.I);
+
+            % For sparse matrices, only consider non-zero (connected) entries
+            if obj.density < 1
+                mask_E = obj.S(:, obj.E);
+                mask_I = obj.S(:, obj.I);
+                weights_E = W_E(mask_E & ~isnan(W_E));
+                weights_I = W_I(mask_I & ~isnan(W_I));
+                all_weights = [weights_E; weights_I];
+            else
+                weights_E = W_E(~isnan(W_E));
+                weights_I = W_I(~isnan(W_I));
+                all_weights = W_no_diag(~isnan(W_no_diag));
+            end
+
+            % Compute measured statistics
+            measured_mu = mean(all_weights);
+            measured_mu_E = mean(weights_E);
+            measured_mu_I = mean(weights_I);
+            measured_sigma_E = std(weights_E);
+            measured_sigma_I = std(weights_I);
+            % Compute measured_sigma_pop as weighted average of variances (matching expected formula)
+            measured_var_pop = obj.f * measured_sigma_E^2 + (1 - obj.f) * measured_sigma_I^2;
+            measured_sigma_pop = sqrt(measured_var_pop);
+
+            % Compute expected population sigma from total_variance
+            [~, total_variance] = obj.compute_expected_radius();
+            expected_sigma_pop = sqrt(total_variance);
+
+            % Display results
+            fprintf('\n========== RMT2 Parameter Summary ==========\n');
+            if ~isempty(obj.description)
+                fprintf('Description:        %s\n', obj.description);
+            end
+            fprintf('                    Set Value    Measured Value\n');
+            fprintf('----------------------------------------------\n');
+            fprintf('mu (overall mean)   %10.4f    %10.4f\n', obj.mu, measured_mu);
+            fprintf('mu_E                %10.4f    %10.4f\n', obj.mu_E, measured_mu_E);
+            fprintf('mu_I                %10.4f    %10.4f\n', obj.mu_I, measured_mu_I);
+            fprintf('sigma_E (b_E)       %10.4f    %10.4f\n', obj.b_E, measured_sigma_E);
+            fprintf('sigma_I (b_I)       %10.4f    %10.4f\n', obj.b_I, measured_sigma_I);
+            fprintf('sigma_pop           %10.4f    %10.4f\n', expected_sigma_pop, measured_sigma_pop);
+            fprintf('==============================================\n\n');
         end
 
         function new_obj = copy(obj)
