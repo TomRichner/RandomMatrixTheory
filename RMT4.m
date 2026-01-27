@@ -1,6 +1,9 @@
 classdef RMT4 < handle
     % RMT4 - Random Matrix Theory class following Harris et al. (2023)
     % Variable names match the paper's notation for equations 15-18, 24-25, 30-31
+    %
+    % Refactored: E, I, u, v, W are now Dependent properties (computed on access).
+    % Eigenvalues are cached with an invalidation flag for performance.
 
     properties
         N               % System size
@@ -18,22 +21,34 @@ classdef RMT4 < handle
         A               % Base random matrix (Gaussian, mean 0, var 1)
         S               % Sparsity mask (logical)
 
-        % Low-rank structure M = u * v' (Eq 12)
-        u               % Left vector: ones(N,1)
-        v               % Right vector: [mu_tilde_e repeated Nf times, mu_tilde_i repeated N(1-f) times]
-
         % Control flags
         zrs_mode        % 'none', 'ZRS', 'SZRS', 'Partial_SZRS'
         shift           % Scalar shift for eigenvalues (diagonal shift)
 
-        % Population indices
+        % Visualization
+        description
+        outlier_threshold  % Multiplier for R to determine outlier eigenvalues (default 1.03)
+    end
+
+    properties (Dependent)
+        % Population indices (computed from f and N)
         E               % Logical index for Excitatory neurons
         I               % Logical index for Inhibitory neurons
 
-        % Visualization
-        eigenvalues
-        description
-        outlier_threshold  % Multiplier for R to determine outlier eigenvalues (default 1.03)
+        % Low-rank structure M = u * v' (Eq 12)
+        u               % Left vector: ones(N,1)
+        v               % Right vector: [mu_tilde_e repeated Nf times, mu_tilde_i repeated N(1-f) times]
+
+        % Variance structure (Eq 11)
+        D               % Diagonal variance matrix: diag(sigma_tilde_e repeated Nf, sigma_tilde_i repeated N(1-f))
+
+        % Weight/Jacobian matrix
+        W               % Jacobian matrix (computed on access)
+    end
+
+    properties (Access = private)
+        eigenvalues_cache   % Cached eigenvalue computation
+        eigenvalues_valid   % Flag indicating if cache is valid
     end
 
     methods
@@ -58,26 +73,164 @@ classdef RMT4 < handle
             obj.A = randn(N, N);  % Mean 0, Var 1
             obj.update_sparsity();
 
-            % Initialize E/I indices
-            obj.update_populations();
-
-            % Default u and v (Dale's law structure, Eq 12)
-            obj.set_default_uv();
+            % Initialize eigenvalue cache
+            obj.eigenvalues_cache = [];
+            obj.eigenvalues_valid = false;
         end
 
-        %% Property Setters with auto-updates
+        %% Dependent Property Getters
+        function val = get.E(obj)
+            val = false(obj.N, 1);
+            val(1:round(obj.f * obj.N)) = true;
+        end
+
+        function val = get.I(obj)
+            val = ~obj.E;
+        end
+
+        function val = get.u(obj)
+            val = ones(obj.N, 1);
+        end
+
+        function val = get.v(obj)
+            val = zeros(obj.N, 1);
+            E_idx = obj.E;
+            val(E_idx) = obj.mu_tilde_e;
+            val(~E_idx) = obj.mu_tilde_i;
+        end
+
+        function val = get.D(obj)
+            % Eq 11: D = diag(sigma_tilde_e repeated Nf times, sigma_tilde_i repeated N(1-f) times)
+            D_vec = zeros(obj.N, 1);
+            E_idx = obj.E;
+            D_vec(E_idx) = obj.sigma_tilde_e;
+            D_vec(~E_idx) = obj.sigma_tilde_i;
+            val = diag(D_vec);
+        end
+
+        function val = get.W(obj)
+            % Construct weight matrix W based on Harris 2023 equations
+            % This replaces the old get_Jacobian() method
+
+            % Get diagonal variance matrix D (Eq 11) and low-rank structure M (Eq 12)
+            D = obj.D;
+            M = obj.u * obj.v';
+
+            switch obj.zrs_mode
+                case 'none'
+                    % Standard construction: W = S .* (A*D + M)  (Eq 6)
+                    W_dense = (obj.A * D) + M;
+                    val = obj.S .* W_dense;
+
+                case 'ZRS'
+                    % Dense ZRS using Projection Operator P (Eq 24, 25)
+                    % Eq 24: P = I_N - (u*u')/N
+                    % Eq 25: W = A*D*P + u*v'
+
+                    if obj.alpha < 1
+                        warning('RMT4:SparsityWarning', 'Using ''ZRS'' (projection) with sparse matrix. This will destroy sparsity. Consider ''SZRS''.');
+                    end
+
+                    % Eq 24: Projection operator
+                    P = eye(obj.N) - (obj.u * obj.u') / obj.N;
+
+                    % Eq 25: W = A*D*P + M
+                    val = (obj.A * D * P) + M;
+
+                    if obj.alpha < 1
+                        val = obj.S .* val;
+                    end
+
+                case 'SZRS'
+                    % Sparse Zero Row Sum (Eq 30, 31)
+                    % Eq 30: W = S .* (A*D + u*v') - B
+                    % Eq 31: W_bar_i = sum_j W_ij / sum_j S_ij
+
+                    % Base sparse matrix
+                    W_base = obj.S .* ((obj.A * D) + M);
+
+                    % Eq 31: Row averages of non-zero elements
+                    row_sums = sum(W_base, 2);
+                    row_counts = sum(obj.S, 2);
+                    row_counts(row_counts == 0) = 1;  % Avoid division by zero
+                    W_bar_i = row_sums ./ row_counts;
+
+                    % Correction matrix B: B_ij = S_ij * W_bar_i
+                    B = obj.S .* W_bar_i;
+
+                    % Eq 30: Final matrix
+                    val = W_base - B;
+
+                case 'Partial_SZRS'
+                    % Partial SZRS (Eq 32)
+                    % Apply correction ONLY to random component J = S .* (A*D)
+                    % Keep M component (S .* M) intact to preserve imbalance
+
+                    % Random component
+                    J_base = obj.S .* (obj.A * D);
+
+                    % Mean structure component
+                    M_base = obj.S .* M;
+
+                    % Eq 32: Row averages of random component J only
+                    J_row_sums = sum(J_base, 2);
+                    row_counts = sum(obj.S, 2);
+                    row_counts(row_counts == 0) = 1;
+                    J_bar_i = J_row_sums ./ row_counts;
+
+                    % Partial correction B
+                    B_partial = obj.S .* J_bar_i;
+
+                    % W = (J_base - B_partial) + M_base
+                    val = (J_base - B_partial) + M_base;
+            end
+
+            % Apply diagonal shift
+            val = val + obj.shift * eye(obj.N);
+        end
+
+        %% Property Setters with cache invalidation
         function set.alpha(obj, val)
             obj.alpha = val;
-            if ~isempty(obj.N)
+            if ~isempty(obj.A)
                 obj.update_sparsity();
             end
+            obj.invalidate_eigenvalues();
         end
 
         function set.f(obj, val)
             obj.f = val;
-            if ~isempty(obj.N)
-                obj.update_populations();
-            end
+            obj.invalidate_eigenvalues();
+        end
+
+        function set.mu_tilde_e(obj, val)
+            obj.mu_tilde_e = val;
+            obj.invalidate_eigenvalues();
+        end
+
+        function set.mu_tilde_i(obj, val)
+            obj.mu_tilde_i = val;
+            obj.invalidate_eigenvalues();
+        end
+
+        function set.sigma_tilde_e(obj, val)
+            obj.sigma_tilde_e = val;
+            obj.invalidate_eigenvalues();
+        end
+
+        function set.sigma_tilde_i(obj, val)
+            obj.sigma_tilde_i = val;
+            obj.invalidate_eigenvalues();
+        end
+
+        function set.zrs_mode(obj, val)
+            obj.zrs_mode = val;
+            obj.invalidate_eigenvalues();
+        end
+
+        function set.shift(obj, val)
+            obj.shift = val;
+            obj.invalidate_eigenvalues();
         end
 
         %% Parameter Setters
@@ -90,9 +243,6 @@ classdef RMT4 < handle
             if nargin > 4, obj.sigma_tilde_i = sigma_tilde_i; end
             if nargin > 5, obj.f = f; end
             if nargin > 6, obj.alpha = alpha; end
-
-            % Update u/v based on current params
-            obj.set_default_uv();
         end
 
         function set_alpha(obj, alpha)
@@ -110,27 +260,9 @@ classdef RMT4 < handle
         end
 
         %% Internal Updates
-        function update_populations(obj)
-            obj.E = false(obj.N, 1);
-            obj.E(1:round(obj.f * obj.N)) = true;
-            obj.I = ~obj.E;
-        end
-
         function update_sparsity(obj)
             obj.S = rand(obj.N, obj.N) < obj.alpha;
-        end
-
-        function set_default_uv(obj)
-            % Default u and v vectors (Eq 12 from Harris 2023)
-            % u = (1, ..., 1)^T
-            % v = (mu_tilde_e repeated Nf times, mu_tilde_i repeated N(1-f) times)^T
-            obj.u = ones(obj.N, 1);
-
-            obj.v = zeros(obj.N, 1);
-            if ~isempty(obj.E)
-                obj.v(obj.E) = obj.mu_tilde_e;
-                obj.v(obj.I) = obj.mu_tilde_i;
-            end
+            obj.invalidate_eigenvalues();
         end
 
         %% Sparse Statistics (Eq 15, 16)
@@ -161,104 +293,24 @@ classdef RMT4 < handle
             R = sqrt(obj.N * (obj.f * sigma_se_sq + (1 - obj.f) * sigma_si_sq));
         end
 
-        %% Core Computation: Build Jacobian/Weight Matrix
+        %% Backward compatibility: get_Jacobian() as alias for W
         function W = get_Jacobian(obj)
-            % Construct weight matrix W based on Harris 2023 equations
-
-            % Construct Diagonal Variance Matrix D (Eq 11)
-            D_vec = zeros(obj.N, 1);
-            D_vec(obj.E) = obj.sigma_tilde_e;
-            D_vec(obj.I) = obj.sigma_tilde_i;
-            D = diag(D_vec);
-
-            % Deterministic component M = u * v' (low-rank structure from Eq 12)
-            M = obj.u * obj.v';
-
-            switch obj.zrs_mode
-                case 'none'
-                    % Standard construction: W = S .* (A*D + M)  (Eq 6)
-                    W_dense = (obj.A * D) + M;
-                    W = obj.S .* W_dense;
-
-                case 'ZRS'
-                    % Dense ZRS using Projection Operator P (Eq 24, 25)
-                    % Eq 24: P = I_N - (u*u')/N
-                    % Eq 25: W = A*D*P + u*v'
-
-                    if obj.alpha < 1
-                        warning('RMT4:SparsityWarning', 'Using ''ZRS'' (projection) with sparse matrix. This will destroy sparsity. Consider ''SZRS''.');
-                    end
-
-                    % Eq 24: Projection operator
-                    P = eye(obj.N) - (obj.u * obj.u') / obj.N;
-
-                    % Eq 25: W = A*D*P + M
-                    W = (obj.A * D * P) + M;
-
-                    if obj.alpha < 1
-                        W = obj.S .* W;
-                    end
-
-                case 'SZRS'
-                    % Sparse Zero Row Sum (Eq 30, 31)
-                    % Eq 30: W = S .* (A*D + u*v') - B
-                    % Eq 31: W_bar_i = sum_j W_ij / sum_j S_ij
-
-                    % Base sparse matrix
-                    W_base = obj.S .* ((obj.A * D) + M);
-
-                    % Eq 31: Row averages of non-zero elements
-                    row_sums = sum(W_base, 2);
-                    row_counts = sum(obj.S, 2);
-                    row_counts(row_counts == 0) = 1;  % Avoid division by zero
-                    W_bar_i = row_sums ./ row_counts;
-
-                    % Correction matrix B: B_ij = S_ij * W_bar_i
-                    B = obj.S .* W_bar_i;
-
-                    % Eq 30: Final matrix
-                    W = W_base - B;
-
-                case 'Partial_SZRS'
-                    % Partial SZRS (Eq 32)
-                    % Apply correction ONLY to random component J = S .* (A*D)
-                    % Keep M component (S .* M) intact to preserve imbalance
-
-                    % Random component
-                    J_base = obj.S .* (obj.A * D);
-
-                    % Mean structure component
-                    M_base = obj.S .* M;
-
-                    % Eq 32: Row averages of random component J only
-                    J_row_sums = sum(J_base, 2);
-                    row_counts = sum(obj.S, 2);
-                    row_counts(row_counts == 0) = 1;
-                    J_bar_i = J_row_sums ./ row_counts;
-
-                    % Partial correction B
-                    B_partial = obj.S .* J_bar_i;
-
-                    % W = (J_base - B_partial) + M_base
-                    W = (J_base - B_partial) + M_base;
-            end
-
-            % Apply diagonal shift
-            W = W + obj.shift * eye(obj.N);
+            W = obj.W;
         end
 
         %% Display and Diagnostics
         function display_parameters(obj)
             % Display measured statistics from W and compare to theoretical predictions
-            W = obj.get_Jacobian();
+            W_mat = obj.W;
 
             % Remove diagonal for statistics
-            W_no_diag = W;
+            W_no_diag = W_mat;
             W_no_diag(1:obj.N+1:end) = NaN;
 
             % Extract E and I columns
-            W_E = W_no_diag(:, obj.E);
-            W_I = W_no_diag(:, obj.I);
+            E_idx = obj.E;
+            W_E = W_no_diag(:, E_idx);
+            W_I = W_no_diag(:, ~E_idx);
 
             % For sparse matrices, only consider non-zero entries
             W_E_vals = W_E(~isnan(W_E) & (W_E ~= 0));
@@ -296,10 +348,25 @@ classdef RMT4 < handle
             fprintf('==============================================\n\n');
         end
 
-        %% Eigenvalue Computation
+        %% Eigenvalue Computation (with caching)
+        function eigs = get_eigenvalues(obj)
+            % Get eigenvalues, computing only if cache is invalid
+            if ~obj.eigenvalues_valid || isempty(obj.eigenvalues_cache)
+                obj.eigenvalues_cache = eig(obj.W);
+                obj.eigenvalues_valid = true;
+            end
+            eigs = obj.eigenvalues_cache;
+        end
+
         function compute_eigenvalues(obj)
-            W = obj.get_Jacobian();
-            obj.eigenvalues = eig(W);
+            % Force recomputation and cache update (for backward compatibility)
+            obj.eigenvalues_cache = eig(obj.W);
+            obj.eigenvalues_valid = true;
+        end
+
+        function eigs = eigenvalues(obj)
+            % Property-like access for eigenvalues
+            eigs = obj.get_eigenvalues();
         end
 
         %% Plotting
@@ -308,16 +375,14 @@ classdef RMT4 < handle
                 figure; ax = gca;
             end
 
-            if isempty(obj.eigenvalues)
-                obj.compute_eigenvalues();
-            end
+            eigs = obj.get_eigenvalues();
 
             % Plot eigenvalues
-            plot(ax, real(obj.eigenvalues), imag(obj.eigenvalues), 'ko', 'MarkerFaceColor', 'none');
+            plot(ax, real(eigs), imag(eigs), 'ko', 'MarkerFaceColor', 'none');
             hold(ax, 'on');
 
             % Plot theoretical radius (Eq 18)
-            [lambda_O, R] = obj.get_theoretical_stats();
+            [~, R] = obj.get_theoretical_stats();
             theta = linspace(0, 2*pi, 100);
 
             xc = obj.shift;
@@ -326,9 +391,9 @@ classdef RMT4 < handle
 
             % Plot outlier eigenvalues (beyond outlier_threshold*R) as green filled circles
             threshold = obj.outlier_threshold * R;
-            distances = abs(obj.eigenvalues - xc - 1i*yc);
+            distances = abs(eigs - xc - 1i*yc);
             outlier_mask = distances > threshold;
-            outlier_eigs = obj.eigenvalues(outlier_mask);
+            outlier_eigs = eigs(outlier_mask);
             if ~isempty(outlier_eigs)
                 plot(ax, real(outlier_eigs), imag(outlier_eigs), 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0 .7 0], 'MarkerEdgeColor', [0 .7 0]);
             end
@@ -345,15 +410,27 @@ classdef RMT4 < handle
             % Create new object with same N
             new_obj = RMT4(obj.N);
 
-            % Copy all non-dependent, non-constant properties
-            meta = metaclass(obj);
-            props = meta.PropertyList;
-            for i = 1:numel(props)
-                prop = props(i);
-                if ~prop.Dependent && ~prop.Constant && ~prop.Abstract
-                    new_obj.(prop.Name) = obj.(prop.Name);
-                end
-            end
+            % Copy stored (non-dependent) properties
+            new_obj.alpha = obj.alpha;
+            new_obj.f = obj.f;
+            new_obj.mu_tilde_e = obj.mu_tilde_e;
+            new_obj.mu_tilde_i = obj.mu_tilde_i;
+            new_obj.sigma_tilde_e = obj.sigma_tilde_e;
+            new_obj.sigma_tilde_i = obj.sigma_tilde_i;
+            new_obj.A = obj.A;
+            new_obj.S = obj.S;
+            new_obj.zrs_mode = obj.zrs_mode;
+            new_obj.shift = obj.shift;
+            new_obj.description = obj.description;
+            new_obj.outlier_threshold = obj.outlier_threshold;
+            new_obj.eigenvalues_cache = obj.eigenvalues_cache;
+            new_obj.eigenvalues_valid = obj.eigenvalues_valid;
+        end
+    end
+
+    methods (Access = private)
+        function invalidate_eigenvalues(obj)
+            obj.eigenvalues_valid = false;
         end
     end
 end

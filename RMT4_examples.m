@@ -13,7 +13,7 @@ g = 0;
 g = g + 1;
 G(g).rmt = RMT4(N);
 % set_params(mu_tilde_e, mu_tilde_i, sigma_tilde_e, sigma_tilde_i, f, alpha)
-G(g).rmt.set_params(0, -0.3/sqrt(N), 0.5/sqrt(N), 0.5/sqrt(N), 0.5, 1.0);
+G(g).rmt.set_params(0, -0/sqrt(N), 0.5/sqrt(N), 0.5/sqrt(N), 0.5, 1.0);
 G(g).rmt.set_zrs_mode('none');
 G(g).rmt.description = 'Dense unbalanced (none)';
 G(g).rmt.display_parameters();
@@ -22,7 +22,7 @@ G(g).rmt.display_parameters();
 % Expectation: Visible outlier from E-I imbalance
 g = g + 1;
 G(g).rmt = G(g-1).rmt.copy();
-G(g).rmt.set_params(1/sqrt(N), -1.3/sqrt(N), 0.5/sqrt(N), 0.5/sqrt(N), 0.5);
+G(g).rmt.set_params(1/sqrt(N), -1/sqrt(N), 0.5/sqrt(N), 0.5/sqrt(N), 0.5);
 G(g).rmt.set_zrs_mode('none');
 G(g).rmt.description = 'Dense Unbalanced Dales';
 G(g).rmt.display_parameters();
