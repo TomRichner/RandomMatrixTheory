@@ -4,60 +4,66 @@
 
 clear; close all; clc;
 
-N = 500;
+rng(42)
+
+N = 600;
 G = struct();
 g = 0;
+E_W = +0.05/sqrt(N);
 
-%% 1. Dense unbalanced Network (no ZRS)
+%% Dense unbalanced Network
 % Expectation: Outlier visible, bulk within radius
 g = g + 1;
 G(g).rmt = RMT4(N);
 % set_params(mu_tilde_e, mu_tilde_i, sigma_tilde_e, sigma_tilde_i, f, alpha)
-G(g).rmt.set_params(0, -0/sqrt(N), 1/sqrt(N), 1/sqrt(N), 0.5, 1.0);
+G(g).rmt.set_params(0+E_W, 0+E_W, 1/sqrt(N), 1/sqrt(N), 0.5, 1.0);
 G(g).rmt.set_zrs_mode('none');
 G(g).rmt.description = 'Dense unbalanced (none)';
 G(g).rmt.display_parameters();
 
-%% 2. Dense Unbalanced with means
+%% Dense unbalanced shifted Network
+% Expectation: Outlier visible, bulk within radius
+g = g + 1;
+G(g).rmt = G(g-1).rmt.copy();
+G(g).rmt.set_params(0,0); % remove imbalance
+G(g).rmt.shift = -G(g).rmt.R;  % Shift by spectral radius
+G(g).rmt.description = 'Dense unbalanced shifted';
+G(g).rmt.display_parameters();
+
+%% Dense Unbalanced Dales
 % Expectation: Visible outlier from E-I imbalance
 g = g + 1;
 G(g).rmt = G(g-1).rmt.copy();
 G(g).rmt.set_params(1/sqrt(N), -1/sqrt(N), 1/sqrt(N), 1/sqrt(N), 0.5);
-G(g).rmt.set_zrs_mode('none');
-G(g).rmt.description = 'Dense Unbalanced Dales';
+G(g).rmt.description = 'Dense Dales';
 G(g).rmt.display_parameters();
 
-%% 3. Dense Unbalanced with ZRS (Eq 24-25)
-% Expectation: Projection removes random outliers, preserves mean structure
+%% Dense Unbalanced Dalse ZRS
+% Expectation: Visible outlier from E-I imbalance
 g = g + 1;
 G(g).rmt = G(g-1).rmt.copy();
 G(g).rmt.set_zrs_mode('ZRS');
-G(g).rmt.description = 'Dense Unbalanced ZRS';
+G(g).rmt.description = 'Dense Dales ZRS';
 G(g).rmt.display_parameters();
 
-%% 4. Sparse Unbalanced (no correction)
-% Expectation: Local outliers may escape radius
+%% Dense Unbalanced Dales different sigmas
+% Expectation: Non-uniform eigenvalue density when sigma_e != sigma_i
 g = g + 1;
 G(g).rmt = G(g-1).rmt.copy();
-G(g).rmt.set_alpha(0.5);
-G(g).rmt.set_zrs_mode('none');
-G(g).rmt.description = 'Sparse Unbalanced (none)';
+% Set a different sigma_tilde_e, then compute sigma_tilde_i to maintain target variance
+G(g).rmt.sigma_tilde_e = 0.35/sqrt(N);
+target_variance = 1/N;  % Same total variance as before
+G(g).rmt.sigma_tilde_i = G(g).rmt.compute_sigma_tilde_i_for_target_variance(target_variance);
+G(g).rmt.description = 'Dense Dales different sigmas';
 G(g).rmt.display_parameters();
 
-%% 5. Sparse Unbalanced with SZRS (Eq 30-31)
-% Expectation: Full SZRS forces row sums to zero, removes E-I outlier
-g = g + 1;
-G(g).rmt = G(g-1).rmt.copy();
-G(g).rmt.set_zrs_mode('SZRS');
-G(g).rmt.description = 'Sparse Unbalanced SZRS';
-G(g).rmt.display_parameters();
-
-%% 6. Sparse Unbalanced with Partial SZRS (Eq 32)
+%% Sparse Unbalanced with Partial SZRS (Eq 32)
 % Expectation: Outlier preserved, local random outliers removed
 g = g + 1;
 G(g).rmt = G(g-1).rmt.copy();
+G(g).rmt.set_alpha(0.5);
 G(g).rmt.set_zrs_mode('Partial_SZRS');
-G(g).rmt.description = 'Sparse Partial SZRS';
+G(g).rmt.description = 'Sparse Unbalanced Dales Partial SZRS';
 G(g).rmt.display_parameters();
 
 %% Compute and Plot

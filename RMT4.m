@@ -44,6 +44,16 @@ classdef RMT4 < handle
 
         % Weight/Jacobian matrix
         W               % Jacobian matrix (computed on access)
+
+        % Sparse statistics (Eq 15, 16)
+        mu_se           % Sparse excitatory mean: alpha * mu_tilde_e
+        mu_si           % Sparse inhibitory mean: alpha * mu_tilde_i
+        sigma_se_sq     % Sparse excitatory variance (Eq 16)
+        sigma_si_sq     % Sparse inhibitory variance (Eq 16)
+
+        % Theoretical predictions (Eq 17, 18)
+        lambda_O        % Outlier eigenvalue
+        R               % Spectral radius
     end
 
     properties (Access = private)
@@ -189,6 +199,36 @@ classdef RMT4 < handle
             val = val + obj.shift * eye(obj.N);
         end
 
+        function val = get.mu_se(obj)
+            % Eq 15: mu_se = alpha * mu_tilde_e
+            val = obj.alpha * obj.mu_tilde_e;
+        end
+
+        function val = get.mu_si(obj)
+            % Eq 15: mu_si = alpha * mu_tilde_i
+            val = obj.alpha * obj.mu_tilde_i;
+        end
+
+        function val = get.sigma_se_sq(obj)
+            % Eq 16: sigma_se^2 = alpha*(1-alpha)*mu_tilde_e^2 + alpha*sigma_tilde_e^2
+            val = obj.alpha * (1 - obj.alpha) * obj.mu_tilde_e^2 + obj.alpha * obj.sigma_tilde_e^2;
+        end
+
+        function val = get.sigma_si_sq(obj)
+            % Eq 16: sigma_si^2 = alpha*(1-alpha)*mu_tilde_i^2 + alpha*sigma_tilde_i^2
+            val = obj.alpha * (1 - obj.alpha) * obj.mu_tilde_i^2 + obj.alpha * obj.sigma_tilde_i^2;
+        end
+
+        function val = get.lambda_O(obj)
+            % Eq 17: lambda_O = N * [f * mu_se + (1-f) * mu_si]
+            val = obj.N * (obj.f * obj.mu_se + (1 - obj.f) * obj.mu_si);
+        end
+
+        function val = get.R(obj)
+            % Eq 18: R = sqrt(N * [f * sigma_se^2 + (1-f) * sigma_si^2])
+            val = sqrt(obj.N * (obj.f * obj.sigma_se_sq + (1 - obj.f) * obj.sigma_si_sq));
+        end
+
         %% Property Setters with cache invalidation
         function set.alpha(obj, val)
             obj.alpha = val;
@@ -259,38 +299,77 @@ classdef RMT4 < handle
             obj.zrs_mode = mode;
         end
 
+        function sigma_tilde_i = compute_sigma_tilde_i_for_target_variance(obj, target_variance)
+            % Compute sigma_tilde_i to achieve a target expected variance Var(W)
+            %
+            % Uses equations 14 and 16 from Harris 2023:
+            %   Eq 14: Var(W) = f * sigma_se^2 + (1-f) * sigma_si^2
+            %   Eq 16: sigma_sk^2 = alpha*(1-alpha)*mu_tilde_k^2 + alpha*sigma_tilde_k^2
+            %
+            % For dense (alpha=1), Eq 16 simplifies to: sigma_sk^2 = sigma_tilde_k^2
+            %
+            % Rearranging Eq 14 for sigma_si^2:
+            %   sigma_si^2 = (target_variance - f * sigma_se^2) / (1 - f)
+            %
+            % Then for dense: sigma_tilde_i = sqrt(sigma_si^2)
+            %
+            % INPUT:
+            %   target_variance - Desired expected variance Var(W) = f*sigma_se^2 + (1-f)*sigma_si^2
+            %
+            % OUTPUT:
+            %   sigma_tilde_i - The sigma_tilde_i value to set
+            %
+            % NOTE: This function only computes the value. Call obj.sigma_tilde_i = value to apply.
+
+            % Check that alpha = 1 (dense case only)
+            if obj.alpha < 1
+                error('RMT4:SparseCaseNotSupported', ...
+                    'compute_sigma_tilde_i_for_target_variance only supports dense matrices (alpha=1). For alpha<1, a more complex solver is needed.');
+            end
+
+            % For dense case (alpha=1), sigma_se^2 = sigma_tilde_e^2
+            sigma_se_sq = obj.sigma_tilde_e^2;
+
+            % Solve Eq 14 for sigma_si^2:
+            % target_variance = f * sigma_se^2 + (1-f) * sigma_si^2
+            % sigma_si^2 = (target_variance - f * sigma_se^2) / (1 - f)
+            sigma_si_sq = (target_variance - obj.f * sigma_se_sq) / (1 - obj.f);
+
+            % Check that the result is valid (non-negative)
+            if sigma_si_sq < 0
+                error('RMT4:InvalidTargetVariance', ...
+                    'Target variance %.4f is too small. Minimum achievable is %.4f (when sigma_tilde_i=0).', ...
+                    target_variance, obj.f * sigma_se_sq);
+            end
+
+            % For dense case, sigma_tilde_i = sqrt(sigma_si^2)
+            sigma_tilde_i = sqrt(sigma_si_sq);
+        end
+
         %% Internal Updates
         function update_sparsity(obj)
             obj.S = rand(obj.N, obj.N) < obj.alpha;
             obj.invalidate_eigenvalues();
         end
 
-        %% Sparse Statistics (Eq 15, 16)
+        %% Sparse Statistics (Eq 15, 16) - Legacy methods for backward compatibility
         function [mu_se, mu_si] = get_sparse_means(obj)
-            % Eq 15: mu_sk = alpha * mu_tilde_k
-            mu_se = obj.alpha * obj.mu_tilde_e;
-            mu_si = obj.alpha * obj.mu_tilde_i;
+            % DEPRECATED: Use obj.mu_se and obj.mu_si directly
+            mu_se = obj.mu_se;
+            mu_si = obj.mu_si;
         end
 
         function [sigma_se_sq, sigma_si_sq] = get_sparse_variances(obj)
-            % Eq 16: sigma_sk^2 = alpha*(1-alpha)*mu_tilde_k^2 + alpha*sigma_tilde_k^2
-            sigma_se_sq = obj.alpha * (1 - obj.alpha) * obj.mu_tilde_e^2 + obj.alpha * obj.sigma_tilde_e^2;
-            sigma_si_sq = obj.alpha * (1 - obj.alpha) * obj.mu_tilde_i^2 + obj.alpha * obj.sigma_tilde_i^2;
+            % DEPRECATED: Use obj.sigma_se_sq and obj.sigma_si_sq directly
+            sigma_se_sq = obj.sigma_se_sq;
+            sigma_si_sq = obj.sigma_si_sq;
         end
 
-        %% Theoretical Predictions (Eq 17, 18)
+        %% Theoretical Predictions (Eq 17, 18) - Legacy method for backward compatibility
         function [lambda_O, R] = get_theoretical_stats(obj)
-            % Eq 17: lambda_O = N * [f * mu_se + (1-f) * mu_si]
-            % Eq 18: R = sqrt(N * [f * sigma_se^2 + (1-f) * sigma_si^2])
-
-            [mu_se, mu_si] = obj.get_sparse_means();
-            [sigma_se_sq, sigma_si_sq] = obj.get_sparse_variances();
-
-            % Eq 17: Outlier eigenvalue
-            lambda_O = obj.N * (obj.f * mu_se + (1 - obj.f) * mu_si);
-
-            % Eq 18: Spectral radius
-            R = sqrt(obj.N * (obj.f * sigma_se_sq + (1 - obj.f) * sigma_si_sq));
+            % DEPRECATED: Use obj.lambda_O and obj.R directly
+            lambda_O = obj.lambda_O;
+            R = obj.R;
         end
 
         %% Backward compatibility: get_Jacobian() as alias for W
@@ -322,10 +401,13 @@ classdef RMT4 < handle
             measured_sigma_E = std(W_E_vals, 1);
             measured_sigma_I = std(W_I_vals, 1);
 
-            % Theoretical predictions
-            [mu_se, mu_si] = obj.get_sparse_means();
-            [sigma_se_sq, sigma_si_sq] = obj.get_sparse_variances();
-            [lambda_O, R] = obj.get_theoretical_stats();
+            % Theoretical predictions (use dependent properties directly)
+            mu_se = obj.mu_se;
+            mu_si = obj.mu_si;
+            sigma_se_sq = obj.sigma_se_sq;
+            sigma_si_sq = obj.sigma_si_sq;
+            lambda_O = obj.lambda_O;
+            R = obj.R;
 
             fprintf('\n========== RMT4 Parameter Summary ==========\n');
             if ~isempty(obj.description)
@@ -378,11 +460,12 @@ classdef RMT4 < handle
             eigs = obj.get_eigenvalues();
 
             % Plot eigenvalues
-            plot(ax, real(eigs), imag(eigs), 'ko', 'MarkerFaceColor', 'none');
+            mSize = 5;
+            plot(ax, real(eigs), imag(eigs), 'ko', 'MarkerSize', mSize, 'MarkerFaceColor', 'none', 'LineWidth', 0.5);
             hold(ax, 'on');
 
             % Plot theoretical radius (Eq 18)
-            [~, R] = obj.get_theoretical_stats();
+            R = obj.R;
             theta = linspace(0, 2*pi, 100);
 
             xc = obj.shift;
@@ -395,7 +478,7 @@ classdef RMT4 < handle
             outlier_mask = distances > threshold;
             outlier_eigs = eigs(outlier_mask);
             if ~isempty(outlier_eigs)
-                plot(ax, real(outlier_eigs), imag(outlier_eigs), 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0 .7 0], 'MarkerEdgeColor', [0 .7 0]);
+                plot(ax, real(outlier_eigs), imag(outlier_eigs), 'o', 'MarkerSize', mSize, 'MarkerFaceColor', [0 .7 0], 'MarkerEdgeColor', [0 .7 0]);
             end
 
             xlabel(ax, 'Re(\lambda)');
