@@ -1,10 +1,10 @@
-% RMT4_examples.m
-% Illustrative examples for RMT4 class based on Harris et al. (2023)
-% Testing equations 15-18, 24-25, 30-31 with ZRS, SZRS, and Partial SZRS
+% Illustrative examples for RMT4 class based on Harris et al. 2023
 
 clear; close all; clc;
 
-rng(42)
+save_figs = true;
+
+rng(100)
 
 N = 600;
 G = struct();
@@ -16,7 +16,7 @@ E_W = +0.05/sqrt(N);
 g = g + 1;
 G(g).rmt = RMT4(N);
 % set_params(mu_tilde_e, mu_tilde_i, sigma_tilde_e, sigma_tilde_i, f, alpha)
-G(g).rmt.set_params(0+E_W, 0+E_W, 1/sqrt(N), 1/sqrt(N), 0.5, 1.0);
+G(g).rmt.set_params(0+E_W, 0+E_W, 1/sqrt(N), 1/sqrt(N), 1, 1.0);
 G(g).rmt.set_zrs_mode('none');
 G(g).rmt.description = 'Dense unbalanced (none)';
 G(g).rmt.display_parameters();
@@ -26,7 +26,8 @@ G(g).rmt.display_parameters();
 g = g + 1;
 G(g).rmt = G(g-1).rmt.copy();
 G(g).rmt.set_params(0,0); % remove imbalance
-G(g).rmt.shift = -G(g).rmt.R;  % Shift by spectral radius
+R = G(g).rmt.R;
+G(g).rmt.shift = -R;  % Shift by spectral radius
 G(g).rmt.description = 'Dense unbalanced shifted';
 G(g).rmt.display_parameters();
 
@@ -68,8 +69,8 @@ G(g).rmt.display_parameters();
 
 %% Compute and Plot
 f1 = figure(1);
-set(f1, 'Position', [100   200   990   600], 'Color', 'white');
-t = tiledlayout(2, ceil(length(G)/2), 'TileSpacing', 'compact', 'Padding', 'compact');
+set(f1, 'Position', [100   300   760   500], 'Color', 'white');
+t = tiledlayout(2, ceil(length(G)/2), 'TileSpacing', 'tight', 'Padding', 'compact');
 
 ax = gobjects(length(G), 1);
 
@@ -85,6 +86,7 @@ end
 % Determine global scale centered on each plot's shift
 max_radius_x = 0;
 max_radius_y = 0;
+max_R = 0;
 
 for i = 1:length(G)
     axis(ax(i), 'normal');
@@ -96,6 +98,7 @@ for i = 1:length(G)
     dist_y = max(abs(current_ylim));
     max_radius_x = max(max_radius_x, dist_x);
     max_radius_y = max(max_radius_y, dist_y);
+    max_R = max(max_R, G(i).rmt.R);
 end
 
 % Apply common scale with margin
@@ -115,16 +118,17 @@ for i = 1:length(G)
     axes(ax(i));
     x_lim = xlim;
     y_lim = ylim;
+    y_lim_axis = min(0.75*y_lim,1.1*max_R);%y_lim)
     axis off;
 
     hold on;
     h_x = plot(x_lim, [0,0], 'k', 'LineWidth', 1.5);
-    h_y = plot([0,0], y_lim, 'k', 'LineWidth', 1.5);
+    h_y = plot([0,0], y_lim_axis, 'k', 'LineWidth', 1.5);
     uistack([h_x, h_y], 'bottom');
 
     text(x_lim(2), 0, ' Re', 'Interpreter', 'latex', 'VerticalAlignment', 'middle', 'FontSize', 16);
-    text(0, y_lim(2), 'Im', 'Interpreter', 'latex', 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center', 'FontSize', 16);
-    text(x_lim(1), y_lim(1), G(i).rmt.description, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontWeight', 'normal', 'Rotation', 90);
+    text(0, y_lim_axis(2), 'Im', 'Interpreter', 'latex', 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center', 'FontSize', 16);
+    % text(x_lim(1), y_lim(1), G(i).rmt.description, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontWeight', 'normal', 'Rotation', 90);
 
     xlim(x_lim);
     ylim(y_lim);
@@ -133,6 +137,11 @@ end
 
 % Add letters (a), (b), etc. to subplots
 letters = arrayfun(@(c) sprintf('(%s)', c), 'a':'z', 'UniformOutput', false);
-AddLetters2Plots(num2cell(ax), letters, 'FontSize', 18, 'FontWeight', 'normal', 'HShift', -0.01, 'VShift', -0.03);
+AddLetters2Plots(num2cell(ax), letters, 'FontSize', 14, 'FontWeight', 'normal', 'HShift', +0.005, 'VShift', +0.005);
 
-fprintf('All RMT4 examples completed.\n');
+drawnow;
+set(f1, 'Position', [100   300   760   500]);
+
+if save_figs
+    save_some_figs_to_folder_2('figs', 'RMT4_examples', [], {'fig', 'svg', 'png', 'jp2'});
+end

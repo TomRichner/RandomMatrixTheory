@@ -1,9 +1,6 @@
 classdef RMT4 < handle
     % RMT4 - Random Matrix Theory class following Harris et al. (2023)
     % Variable names match the paper's notation for equations 15-18, 24-25, 30-31
-    %
-    % Refactored: E, I, u, v, W are now Dependent properties (computed on access).
-    % Eigenvalues are cached with an invalidation flag for performance.
 
     properties
         N               % System size
@@ -77,7 +74,7 @@ classdef RMT4 < handle
             obj.zrs_mode = 'none';
             obj.shift = 0;
             obj.description = '';
-            obj.outlier_threshold = 1.03;
+            obj.outlier_threshold = 1.04;
 
             % Initialize random matrices
             obj.A = randn(N, N);  % Mean 0, Var 1
@@ -301,25 +298,6 @@ classdef RMT4 < handle
 
         function sigma_tilde_i = compute_sigma_tilde_i_for_target_variance(obj, target_variance)
             % Compute sigma_tilde_i to achieve a target expected variance Var(W)
-            %
-            % Uses equations 14 and 16 from Harris 2023:
-            %   Eq 14: Var(W) = f * sigma_se^2 + (1-f) * sigma_si^2
-            %   Eq 16: sigma_sk^2 = alpha*(1-alpha)*mu_tilde_k^2 + alpha*sigma_tilde_k^2
-            %
-            % For dense (alpha=1), Eq 16 simplifies to: sigma_sk^2 = sigma_tilde_k^2
-            %
-            % Rearranging Eq 14 for sigma_si^2:
-            %   sigma_si^2 = (target_variance - f * sigma_se^2) / (1 - f)
-            %
-            % Then for dense: sigma_tilde_i = sqrt(sigma_si^2)
-            %
-            % INPUT:
-            %   target_variance - Desired expected variance Var(W) = f*sigma_se^2 + (1-f)*sigma_si^2
-            %
-            % OUTPUT:
-            %   sigma_tilde_i - The sigma_tilde_i value to set
-            %
-            % NOTE: This function only computes the value. Call obj.sigma_tilde_i = value to apply.
 
             % Check that alpha = 1 (dense case only)
             if obj.alpha < 1
@@ -330,9 +308,6 @@ classdef RMT4 < handle
             % For dense case (alpha=1), sigma_se^2 = sigma_tilde_e^2
             sigma_se_sq = obj.sigma_tilde_e^2;
 
-            % Solve Eq 14 for sigma_si^2:
-            % target_variance = f * sigma_se^2 + (1-f) * sigma_si^2
-            % sigma_si^2 = (target_variance - f * sigma_se^2) / (1 - f)
             sigma_si_sq = (target_variance - obj.f * sigma_se_sq) / (1 - obj.f);
 
             % Check that the result is valid (non-negative)
@@ -342,7 +317,6 @@ classdef RMT4 < handle
                     target_variance, obj.f * sigma_se_sq);
             end
 
-            % For dense case, sigma_tilde_i = sqrt(sigma_si^2)
             sigma_tilde_i = sqrt(sigma_si_sq);
         end
 
@@ -459,26 +433,37 @@ classdef RMT4 < handle
 
             eigs = obj.get_eigenvalues();
 
-            % Plot eigenvalues
-            mSize = 5;
-            plot(ax, real(eigs), imag(eigs), 'ko', 'MarkerSize', mSize, 'MarkerFaceColor', 'none', 'LineWidth', 0.5);
+            % Get theoretical radius and center
+            R = obj.R;
+            xc = obj.shift;
+            yc = 0;
+
+            % Compute distances from center for all eigenvalues
+            distances = abs(eigs - xc - 1i*yc);
+
+            % Plot interior eigenvalues (within R) as black circles
+            mSize = 4;
+            interior_mask = distances <= R;
+            interior_eigs = eigs(interior_mask);
+            plot(ax, real(interior_eigs), imag(interior_eigs), 'ko', 'MarkerSize', mSize, 'MarkerFaceColor', 'none', 'LineWidth', 0.5);
             hold(ax, 'on');
 
             % Plot theoretical radius (Eq 18)
-            R = obj.R;
             theta = linspace(0, 2*pi, 100);
-
-            xc = obj.shift;
-            yc = 0;
             plot(ax, xc + R*cos(theta), yc + R*sin(theta), 'k-', 'LineWidth', 2);
 
-            % Plot outlier eigenvalues (beyond outlier_threshold*R) as green filled circles
-            threshold = obj.outlier_threshold * R;
-            distances = abs(eigs - xc - 1i*yc);
-            outlier_mask = distances > threshold;
-            outlier_eigs = eigs(outlier_mask);
-            if ~isempty(outlier_eigs)
-                plot(ax, real(outlier_eigs), imag(outlier_eigs), 'o', 'MarkerSize', mSize, 'MarkerFaceColor', [0 .7 0], 'MarkerEdgeColor', [0 .7 0]);
+            % Plot near outlier eigenvalues (between R and outlier_threshold*R) as black Xs
+            near_outlier_mask = (distances > R) & (distances <= obj.outlier_threshold * R);
+            near_outlier_eigs = eigs(near_outlier_mask);
+            if ~isempty(near_outlier_eigs)
+                plot(ax, real(near_outlier_eigs), imag(near_outlier_eigs), 'kx', 'MarkerSize', mSize, 'LineWidth', 0.5);
+            end
+
+            % Plot far outlier eigenvalues (beyond outlier_threshold*R) as green filled circles
+            far_outlier_mask = distances > obj.outlier_threshold * R;
+            far_outlier_eigs = eigs(far_outlier_mask);
+            if ~isempty(far_outlier_eigs)
+                plot(ax, real(far_outlier_eigs), imag(far_outlier_eigs), 'o', 'MarkerSize', mSize, 'MarkerFaceColor', [0 .7 0], 'MarkerEdgeColor', [0 .7 0]);
             end
 
             xlabel(ax, 'Re(\lambda)');

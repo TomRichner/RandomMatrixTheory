@@ -16,12 +16,12 @@ end
 if isempty(fig_type)
     fig_type = {'fig','svg','png'};
 end
-    
+
 h = get(0,'children');
 h = flipud(h);
 
 for i=fig_vec
-    set(i,'PaperPositionMode','auto')  
+    set(i,'PaperPositionMode','auto')
     if any(strcmpi(fig_type,'fig'))
         saveas(i, fullfile(save_folder, [save_name '_f_' num2str(i)]), 'fig');
     end
@@ -31,5 +31,13 @@ for i=fig_vec
     if any(strcmpi(fig_type,'svg'))
         set(gcf, 'Renderer', 'painters');
         saveas(i, fullfile(save_folder, [save_name '_figure_' num2str(i)]), 'svg');
+    end
+    if any(strcmpi(fig_type,'jp2'))
+        % Export at 300 DPI via temp PNG, then convert to lossless JP2
+        temp_file = [tempname '.png'];
+        print(figure(i), temp_file, '-dpng', '-r300');
+        img = imread(temp_file);
+        delete(temp_file);
+        imwrite(img, fullfile(save_folder, [save_name '_figure_' num2str(i) '.jpg']), 'jp2', 'Mode', 'lossless');
     end
 end
