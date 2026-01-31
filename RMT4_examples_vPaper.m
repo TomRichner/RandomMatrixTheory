@@ -137,11 +137,11 @@ end
 
 % Add letters (a), (b), etc. to subplots
 letters = arrayfun(@(c) sprintf('(%s)', c), 'a':'z', 'UniformOutput', false);
-AddLetters2Plots(num2cell(ax), letters, 'FontSize', 14, 'FontWeight', 'normal', 'HShift', +0.005, 'VShift', +0.005);
+AddLetters2Plots(num2cell(ax), letters, 'FontSize', 18, 'FontWeight', 'normal', 'HShift', +0.01, 'VShift', +0.01);
 
 drawnow;
 set(f1, 'Position', [100   300   760   500]);
 
 if save_figs
-    save_some_figs_to_folder_2('figs', 'RMT4_examples', [], {'fig', 'svg', 'png', 'jp2'});
+    save_some_figs_to_folder_2('RMT_figs', 'RMT_examples', [], {'fig', 'svg', 'png', 'jp2'});
 end
